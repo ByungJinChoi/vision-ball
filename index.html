@@ -2,19 +2,19 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8" />
-<title>XROBO BLE — 공 따라가기 (ROI / 1초 주기)</title>
+<title>XROBO BLE — 공 따라가기 (9분할 / 1초 주기)</title>
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
 <script src="https://unpkg.com/blockly/blockly.min.js"></script>
 <!-- Tesseract.js (원본 유지: 다른 기능 변경 금지 조건 충족) -->
 <script src="https://unpkg.com/tesseract.js@5/dist/tesseract.min.js"></script>
-<!-- (원본 유지) MediaPipe Hands 로드 태그는 남겨둠: 다른 기능 변경 최소화 -->
+<!-- (원본 유지) MediaPipe Hands 로드 태그는 남겨둠 -->
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.min.js"></script>
 <style>
 
 /* === 전체화면 실행 시: 영상 크게, 로그 조금 작게 === */
 #playOverlay .body{
   display:grid;
-  grid-template-columns: minmax(0, 2.6fr) minmax(260px, 1fr); /* 왼쪽(영상) : 오른쪽(로그) */
+  grid-template-columns: minmax(0, 2.6fr) minmax(260px, 1fr);
   gap:0;
   height:100%;
 }
@@ -64,24 +64,6 @@
   background:#0b0f14;
 }
 
-/* 전체화면용 인식 투명 사각형 */
-#ovCamWrap #ovFocusBox{
-  position:absolute;
-  left:50%;
-  top:50%;
-  width:70%;
-  height:70%;
-  max-width:90%;
-  max-height:90%;
-  transform: translate(-50%,-50%);
-  border:2px solid rgba(255,255,255,.9);
-  border-radius:10px;
-  box-shadow:0 0 0 2px rgba(0,0,0,.25), 0 0 18px rgba(0,255,220,.35);
-  pointer-events:none;
-  z-index:1;
-  opacity:.18;
-}
-
 /* 전체화면 배지 (캠 화면 아래쪽) */
 #ovCamWrap #overlayDigitBadge{
   position:absolute;
@@ -113,7 +95,6 @@
 }
 
 @media (max-width:880px){
-  /* 작은 화면에서는 위:영상 / 아래:로그 (로그 높이 약 180~220px) */
   #playOverlay .body{
     grid-template-columns: 1fr;
     grid-template-rows: minmax(0, 1.7fr) minmax(180px, .9fr);
@@ -124,7 +105,7 @@
   }
 }
 
-/* 눈동자 애니메이션은 숨기고, ROI 박스는 사용 */
+/* 눈동자 애니메이션은 숨기고 구조 유지 */
 #eyesStage{display:none !important;}
 
   :root{
@@ -155,7 +136,6 @@
     --keyGap: 6px;
     --keyFont: 14px;
 
-    /* 기본 눈 변수(코딩 화면에서는 사용 안 함, 오버레이에서만 씀) */
     --eyesGap: 8vmin;
     --eyeSize: 42vmin;
     --pupilSize: 16vmin;
@@ -300,7 +280,7 @@
   #camVideo{
     width:100%;
     height:100%;
-    object-fit:cover;
+    object-fit:contain; /* ★ 9분할 라인과 실제 영상 정렬을 위해 contain */
     transform: scaleX(-1);
     background:#000;
   }
@@ -311,7 +291,7 @@
     display:flex;
     gap:8px;
     align-items:center;
-    z-index:2;
+    z-index:3;
   }
   .camBadge{
     font: 700 12px/1 system-ui;
@@ -323,24 +303,28 @@
     backdrop-filter: blur(6px)
   }
 
-  /* 인식 투명창 (화면 면적의 약 절반) */
-  #focusBox{
+  /* 기존 중심 사각형(ROI) 제거 */
+  #focusBox{ display:none !important; }
+  #ovFocusBox{ display:none !important; }
+
+  /* ===== 9분할(3x3) 라인 오버레이 ===== */
+  /* 필요 시 숨기려면 아래 .gridOverlay { opacity: 0; } 로 바꾸면 됩니다. */
+  .gridOverlay{
     position:absolute;
-    left:50%;
-    top:50%;
-    width:70%;
-    height:70%;
-    max-width:90%;
-    max-height:90%;
-    transform: translate(-50%,-50%);
-    border:2px solid rgba(255,255,255,.9);
-    border-radius:10px;
-    box-shadow:0 0 0 2px rgba(0,0,0,.25), 0 0 18px rgba(0,255,220,.35);
+    /* left/top/width/height 는 JS에서 “실제 영상 표시 영역”으로 맞춥니다 */
+    left:0; top:0; width:100%; height:100%;
     pointer-events:none;
     z-index:2;
-    opacity:.15;
-    transition: opacity .2s linear;
+    opacity:1;
   }
+  .gridOverlay .gridLine{
+    position:absolute;
+    background: rgba(255,255,255,.9); /* 흰색 얇은 라인 */
+  }
+  .gridOverlay .v1{ left:33.3333%; top:0; width:1px; height:100%; transform: translateX(-0.5px); }
+  .gridOverlay .v2{ left:66.6666%; top:0; width:1px; height:100%; transform: translateX(-0.5px); }
+  .gridOverlay .h1{ top:33.3333%; left:0; height:1px; width:100%; transform: translateY(-0.5px); }
+  .gridOverlay .h2{ top:66.6666%; left:0; height:1px; width:100%; transform: translateY(-0.5px); }
 
   /* 카메라 인식 읽기 배지(우측 패널) */
   #digitReadout{
@@ -348,7 +332,7 @@
     left:50%;
     transform:translateX(-50%);
     bottom:12px;
-    z-index:2;
+    z-index:3;
     display:inline-flex;
     align-items:center;
     gap:.55rem;
@@ -479,7 +463,6 @@
     display:flex;
     flex-direction:column;
   }
-  /* 여기에서도 grid 사용 (위쪽 패치와 동일한 비율) */
   #playOverlay .body{
     flex:1 1 auto;
     display:grid;
@@ -489,7 +472,7 @@
     height:100%;
   }
 
-  /* 눈동자 UI (현재는 숨김 상태지만 구조 유지) */
+  /* 눈동자 UI 구조 유지 */
   #eyesStage{
     width:100%;
     height:100%;
@@ -595,7 +578,7 @@
 
 <!-- 좌우 크기 슬라이더 -->
 <style id="xrobo-hsplit-style">
-  :root{ --rightW: 40%; } /* initial right width */
+  :root{ --rightW: 40%; }
   #hResizer{
     flex: 0 0 8px;
     background: linear-gradient(90deg,#e5e7eb,#d1d5db);
@@ -617,7 +600,6 @@
   }
 </style>
 <style id="single-change-hide-handle">
-  /* 기존 열기/닫기 버튼 숨김 (슬라이더로만 조절) */
   #panelHandle { display: none !important; }
 </style>
 
@@ -678,7 +660,6 @@
 
 <!-- ★★★ 실행 전체화면에서 카메라만 사용 + 실행 로그 숨김 패치 (원본 유지) ★★★ -->
 <style id="overlay-fullcam-patch">
-  /* 실행(전체화면)에서는 카메라 화면만 전체 사용, 오른쪽 실행 로그 패널 숨김 */
   #playOverlay .body{
     flex:1 1 auto;
     display:flex;
@@ -734,11 +715,23 @@
       <div id="rightTop">
         <div class="camWrap" id="camWrap">
           <video id="camVideo" playsinline autoplay muted></video>
+
+          <!-- ★ 9분할 라인(패널) -->
+          <div id="gridOverlayPanel" class="gridOverlay" aria-hidden="true">
+            <div class="gridLine v1"></div>
+            <div class="gridLine v2"></div>
+            <div class="gridLine h1"></div>
+            <div class="gridLine h2"></div>
+          </div>
+
+          <!-- (기존 ROI 사각형은 숨김 처리됨) -->
           <div id="focusBox"></div>
+
           <div class="camUi">
             <span id="camBadge" class="camBadge">Cam: off</span>
             <button id="camToggle" class="btn small">캠 켜기</button>
           </div>
+
           <!-- 인식 표시(패널) -->
           <div id="digitReadout">
             <span class="label">공이</span>
@@ -798,7 +791,18 @@
     <div class="body">
       <div id="ovCamWrap">
         <video id="eyesCam" playsinline muted autoplay></video>
+
+        <!-- ★ 9분할 라인(전체화면) -->
+        <div id="gridOverlayOverlay" class="gridOverlay" aria-hidden="true">
+          <div class="gridLine v1"></div>
+          <div class="gridLine v2"></div>
+          <div class="gridLine h1"></div>
+          <div class="gridLine h2"></div>
+        </div>
+
+        <!-- (기존 ROI 사각형은 숨김 처리됨) -->
         <div id="ovFocusBox"></div>
+
         <div id="overlayDigitBadge">
           <span class="label">공이</span>
           <span class="value">—</span>
@@ -893,14 +897,19 @@ var LED_MODE=[["밝기","BRIGHT"],["숨쉬기","BREATHE"]];
 var LED_VALS=Array.from({length:20},(_,i)=>[String(i),String(i)]);
 
 /* ================= 블록 정의 ================= */
-/* ★ 이벤트 블록(공 위치) 옵션 ★ */
+/* ★ 이벤트 블록(9분할) 옵션 ★ */
 const DIGIT_OPTIONS = [
+  ["멀리 왼쪽","B_FAR_LEFT"],
   ["멀리 있음","B_FAR"],
-  ["가까이 있음","B_NEAR"],
+  ["멀리 오른쪽","B_FAR_RIGHT"],
   ["왼쪽에 있음","B_LEFT"],
+  ["중심에 있음","B_CENTER"],
   ["오른쪽에 있음","B_RIGHT"],
-  ["중심에 있음","B_CENTER"]
+  ["왼쪽 가까이","B_LEFT_NEAR"],
+  ["가까이 있음","B_NEAR"],
+  ["오른쪽 가까이","B_RIGHT_NEAR"]
 ];
+
 Blockly.defineBlocksWithJsonArray([
   {
     "type":"xrobo_start",
@@ -1058,10 +1067,14 @@ function normalizeProgram(list){
   return out;
 }
 function buildEventPrograms(){
-  const programs = { B_FAR:[], B_NEAR:[], B_LEFT:[], B_RIGHT:[], B_CENTER:[] };
+  const programs = {
+    B_FAR_LEFT:[], B_FAR:[], B_FAR_RIGHT:[],
+    B_LEFT:[], B_CENTER:[], B_RIGHT:[],
+    B_LEFT_NEAR:[], B_NEAR:[], B_RIGHT_NEAR:[]
+  };
   var evs = ws.getBlocksByType('xrobo_start', true);
   for(var i=0;i<evs.length;i++){
-    var code = evs[i].getFieldValue('DIGIT') || 'B_LEFT';
+    var code = evs[i].getFieldValue('DIGIT') || 'B_CENTER';
     var chain = evs[i].getNextBlock();
     if(!chain) continue;
     var prog=[];
@@ -1101,7 +1114,6 @@ var bleDevice=null,bleServer=null,bleService=null,writeChar=null,notifyChar=null
 var isConnected=false, isRunning=false, isFullscreenRun=false;
 var $=id=>document.getElementById(id);
 
-/* 로그: 우측 패널 + 전체화면 로그 둘 다에 출력 */
 var log=function(m){
   var L=$('log');
   if(L){
@@ -1367,9 +1379,6 @@ var queue = [];
 var queueBusy = false;
 var cancelToken = 0;
 
-/* ★ 번갈아 인식 단계: 0=세로(멀리/가까이), 1=가로(왼/오/중심) */
-let detectPhase = 0;
-
 function sendRaw(s){
   if(!writeChar){
     log('➡️(BLE 미연결) '+s);
@@ -1412,12 +1421,16 @@ async function processQueue(localToken){
 /* 공 위치 이벤트 코드 → 한글 라벨 */
 function eventLabelFromCode(code){
   switch(code){
-    case 'B_FAR':    return '멀리 있음';
-    case 'B_NEAR':   return '가까이 있음';
-    case 'B_LEFT':   return '왼쪽에 있음';
-    case 'B_RIGHT':  return '오른쪽에 있음';
-    case 'B_CENTER': return '중심에 있음';
-    default:         return String(code||'');
+    case 'B_FAR_LEFT':   return '멀리 왼쪽';
+    case 'B_FAR':        return '멀리 있음';
+    case 'B_FAR_RIGHT':  return '멀리 오른쪽';
+    case 'B_LEFT':       return '왼쪽에 있음';
+    case 'B_CENTER':     return '중심에 있음';
+    case 'B_RIGHT':      return '오른쪽에 있음';
+    case 'B_LEFT_NEAR':  return '왼쪽 가까이';
+    case 'B_NEAR':       return '가까이 있음';
+    case 'B_RIGHT_NEAR': return '오른쪽 가까이';
+    default:             return String(code||'');
   }
 }
 
@@ -1456,8 +1469,6 @@ function startTest(){
   eventPrograms = buildEventPrograms();
   cancelToken++;
   queue = [];
-  isFullscreenRun = false;
-  detectPhase = 0; // ★ 항상 멀리/가까이부터 시작
   setRunning(true);
 }
 
@@ -1469,7 +1480,6 @@ async function startFullRun(){
   cancelToken++;
   queue = [];
   isFullscreenRun = true;
-  detectPhase = 0; // ★ 항상 멀리/가까이부터 시작
   setRunning(true);
 
   overlay.classList.add('show');
@@ -1536,10 +1546,13 @@ const focusBox  = document.getElementById('focusBox');
 const digitReadout = document.getElementById('digitReadout');
 const digitValEl = digitReadout.querySelector('.value');
 
+const gridOverlayPanel = document.getElementById('gridOverlayPanel');
+const gridOverlayOverlay = document.getElementById('gridOverlayOverlay');
+
 /* 공용 파라미터 */
 const LOW_W = 64, LOW_H = 48;
 
-/* 캔버스 파라미터 (공 인식용: 4:3 비율 유지) */
+/* 공 인식 캔버스 */
 const OCR_W = 240, OCR_H = 180;
 /* 1초 간격 */
 const DETECT_PERIOD_MS = 1000;
@@ -1562,7 +1575,6 @@ const ocrCtx = ocrCvs.getContext('2d', { willReadFrequently:true });
 ocrCvs.width = OCR_W;
 ocrCvs.height = OCR_H;
 
-/* 간단 회색 변환(원본 유지) */
 function toGray(r,g,b){ return (r*0.299 + g*0.587 + b*0.114)|0; }
 
 /* UI */
@@ -1573,6 +1585,30 @@ function updateCamUi(){
 }
 function updateDigitReadout(v){
   digitValEl.textContent = (v==null ? '—' : String(v));
+}
+
+/* ★ object-fit: contain 상태에서 실제 영상이 그려지는 사각영역 계산 → 라인 위치를 영상에 맞춤 */
+function syncGridOverlayToVideo(videoEl, wrapEl, gridEl){
+  try{
+    if(!gridEl || !wrapEl || !videoEl) return;
+    const vw = videoEl.videoWidth || 0;
+    const vh = videoEl.videoHeight || 0;
+    const ww = wrapEl.clientWidth || 0;
+    const wh = wrapEl.clientHeight || 0;
+    if(vw<=0 || vh<=0 || ww<=0 || wh<=0) return;
+
+    // object-fit: contain 기준
+    const s = Math.min(ww / vw, wh / vh);
+    const dw = vw * s;
+    const dh = vh * s;
+    const left = (ww - dw) / 2;
+    const top  = (wh - dh) / 2;
+
+    gridEl.style.left = left + 'px';
+    gridEl.style.top = top + 'px';
+    gridEl.style.width = dw + 'px';
+    gridEl.style.height = dh + 'px';
+  }catch(_e){}
 }
 
 /* 카메라 on/off */
@@ -1594,7 +1630,7 @@ async function startCam(){
     camOn = true;
     updateCamUi();
     updateDigitReadout(null);
-    await ensureOcr(); /* 함수명 유지 */
+    await ensureOcr();
     startDetectLoop();
     log('🎥 카메라 켜짐');
   }catch(e){
@@ -1613,16 +1649,11 @@ function stopCam(){
   updateCamUi();
   if(camRAF){ cancelAnimationFrame(camRAF); camRAF=null; }
   updateDigitReadout(null);
-  if(focusBox){
-    focusBox.style.left='50%';
-    focusBox.style.top='50%';
-    focusBox.style.opacity='.15';
-  }
   log('🛑 카메라 꺼짐');
 }
 camToggle.onclick = ()=> camOn ? stopCam() : startCam();
 
-/* ===== 공(동그라미) 인식 준비(함수/변수명은 원본 흐름 유지) ===== */
+/* ===== 공(동그라미) 인식 준비(함수/변수명 유지) ===== */
 let ocrWorker = null;
 let ocrReady = false;
 let ocrBusy = false;
@@ -1630,7 +1661,6 @@ let ocrBusy = false;
 async function ensureOcr(){
   if(ocrReady) return;
   try{
-    // 별도 라이브러리 없이 캔버스 기반 원형 후보 탐색
     ocrWorker = { kind:'CIRCLE_DETECTOR' };
     ocrReady = true;
     log('⭕ 원형(동그라미) 물체 인식 준비 완료');
@@ -1639,32 +1669,19 @@ async function ensureOcr(){
   }
 }
 
-/* ROI 좌표(화면 중앙) */
-function getRoiRectFromFocus(video, fracW=0.7, fracH=0.7){
-  const vw = Math.max(1, video.videoWidth || 320);
-  const vh = Math.max(1, video.videoHeight|| 240);
-  const rw = Math.round(vw * fracW);
-  const rh = Math.round(vh * fracH);
-  const x0 = Math.max(0, Math.floor((vw - rw)/2));
-  const y0 = Math.max(0, Math.floor((vh - rh)/2));
-  return { x:x0, y:y0, w:rw, h:rh, vw, vh };
-}
-
-/* 전처리: 캔버스에 그리기 (화면 표시와 동일하게 좌우 반전 적용) */
-function preprocessToOcrCanvas(video, rect){
+/* 전처리: full-frame을 캔버스에 (화면과 동일하게 좌우반전 포함) */
+function preprocessToOcrCanvas(video){
   try{
+    const vw = video.videoWidth || 320;
+    const vh = video.videoHeight|| 240;
     ocrCtx.save();
     ocrCtx.clearRect(0,0, OCR_W, OCR_H);
-    // 화면(video 태그)이 CSS로 좌우반전 되어 있으므로, 인식도 동일하게 맞춤
     ocrCtx.translate(OCR_W, 0);
     ocrCtx.scale(-1, 1);
-    ocrCtx.drawImage(video, rect.x, rect.y, rect.w, rect.h, 0, 0, OCR_W, OCR_H);
+    ocrCtx.drawImage(video, 0, 0, vw, vh, 0, 0, OCR_W, OCR_H);
     ocrCtx.restore();
   }catch(_e){}
-  return {};
 }
-
-function clamp01(v){ return Math.max(0, Math.min(1, v)); }
 
 /* Otsu threshold */
 function otsuThreshold(hist, total){
@@ -1697,12 +1714,13 @@ function otsuThreshold(hist, total){
   return thr;
 }
 
+function clamp01(v){ return Math.max(0, Math.min(1, v)); }
+
 /* saliency 기반 마스크: 색상 무관(밝기 변화 + 컬러차이(diff)) */
 function buildCircleMask(img, w, h){
   const d = img.data;
   const n = w*h;
 
-  // 1) 평균 밝기
   let sumY = 0;
   for(let i=0,p=0;i<n;i++,p+=4){
     const r=d[p], g=d[p+1], b=d[p+2];
@@ -1711,7 +1729,6 @@ function buildCircleMask(img, w, h){
   }
   const meanY = sumY / Math.max(1,n);
 
-  // 2) saliency 히스토그램
   const sal = new Uint8Array(n);
   const hist = new Uint32Array(256);
 
@@ -1719,16 +1736,14 @@ function buildCircleMask(img, w, h){
     const r=d[p], g=d[p+1], b=d[p+2];
     const mx = (r>g? (r>b?r:b) : (g>b?g:b));
     const mn = (r<g? (r<b?r:b) : (g<b?g:b));
-    const diff = mx - mn; // 색상 차이(채도/컬러감)
+    const diff = mx - mn;
 
     const y = (r*0.299 + g*0.587 + b*0.114);
     const dy = Math.abs(y - meanY);
 
-    // 색상에 상관없이: 밝기차(dy) 또는 색상차(diff)가 큰 픽셀을 후보로
     let s = dy;
     if(diff > s) s = diff;
 
-    // 0~255 클램프
     let si = s|0;
     if(si<0) si=0; else if(si>255) si=255;
 
@@ -1736,11 +1751,9 @@ function buildCircleMask(img, w, h){
     hist[si]++;
   }
 
-  // 3) Otsu로 임계값 결정 + 최소값 보정
   let thr = otsuThreshold(hist, n);
-  thr = Math.max(18, thr); // 너무 낮으면 노이즈가 많아짐
+  thr = Math.max(18, thr);
 
-  // 4) 마스크 생성
   let mask = new Uint8Array(n);
   let cnt = 0;
   for(let i=0;i<n;i++){
@@ -1749,7 +1762,6 @@ function buildCircleMask(img, w, h){
     }
   }
 
-  // 너무 많이 잡히면(조명/배경 변화로 대면적): 임계값을 올려서 재생성
   if(cnt > n * 0.40){
     thr = Math.min(255, thr + 18);
     cnt = 0;
@@ -1761,7 +1773,7 @@ function buildCircleMask(img, w, h){
     }
   }
 
-  // 5) 1회 dilation(연결 강화)
+  // 1회 dilation
   const dil = new Uint8Array(n);
   for(let y=0;y<h;y++){
     for(let x=0;x<w;x++){
@@ -1776,7 +1788,7 @@ function buildCircleMask(img, w, h){
     }
   }
 
-  // 6) 간단 노이즈 제거(이웃이 너무 적으면 제거)
+  // 간단 노이즈 제거
   const out = dil.slice();
   for(let y=1;y<h-1;y++){
     for(let x=1;x<w-1;x++){
@@ -1801,8 +1813,8 @@ function analyzeCandidates(mask, w, h){
   const cand = [];
 
   const frameArea = n;
-  const MIN_AREA = Math.max(60, Math.floor(frameArea * 0.0012));  // 너무 작은 노이즈 제거
-  const MAX_AREA = Math.floor(frameArea * 0.55);                  // 배경 전체 같은 오검출 제거
+  const MIN_AREA = Math.max(60, Math.floor(frameArea * 0.0012));
+  const MAX_AREA = Math.floor(frameArea * 0.55);
 
   const stack = [];
 
@@ -1853,7 +1865,7 @@ function analyzeCandidates(mask, w, h){
     const aspect = bw / Math.max(1, bh);
     if(aspect > 3.2 || aspect < 1/3.2) continue;
 
-    const fill = area / (bw * bh); // 원:~0.785, 반원:~0.392 근처
+    const fill = area / (bw * bh); // 원:~0.785, 반원:~0.392
     if(fill < 0.12 || fill > 0.98) continue;
 
     const aspectScore = clamp01(1 - (Math.abs(aspect - 1) / 1.25));
@@ -1877,11 +1889,9 @@ function analyzeCandidates(mask, w, h){
   }
 
   if(!cand.length) return null;
-
   cand.sort((a,b)=>b.score-a.score);
-  const best = cand[0];
 
-  // 반원(화면 끝)도 가능하지만, 화면 내부의 더 좋은 원이 있으면 그걸 우선
+  const best = cand[0];
   const bestNonEdge = cand.find(c=>!c.touchesEdge) || null;
   if(bestNonEdge && best.touchesEdge){
     if(bestNonEdge.score >= best.score * 0.72){
@@ -1895,79 +1905,63 @@ function computeBallConfidence(ball, w, h){
   const frameArea = w*h;
   const areaNorm = clamp01(ball.area / Math.max(1, frameArea * 0.02));
   let conf = 0.12 + 0.78*ball.shapeScore + 0.18*areaNorm;
-  if(ball.touchesEdge) conf -= 0.03; // 반원이어도 유지(소폭만 감산)
+  if(ball.touchesEdge) conf -= 0.03;
   return clamp01(conf) * 100;
 }
 
-/* ★ 3등분 판정 + 번갈아 인식 */
-function classifyByThirds(ball, w, h, phase){
+/* ★ 9분할(3x3) 분류 */
+function classifyGrid9(ball, w, h){
   const cxN = (ball.cx + 0.5) / w;
   const cyN = (ball.cy + 0.5) / h;
 
-  const xBand = Math.max(0, Math.min(2, Math.floor(cxN * 3)));
-  const yBand = Math.max(0, Math.min(2, Math.floor(cyN * 3)));
+  const col = Math.max(0, Math.min(2, Math.floor(cxN * 3)));
+  const row = Math.max(0, Math.min(2, Math.floor(cyN * 3)));
 
-  if(phase === 0){
-    // 세로: 위=멀리, 아래=가까이, 중간=해당없음
-    if(yBand === 0) return { code:'B_FAR', label:'멀리 있음', cxN, cyN };
-    if(yBand === 2) return { code:'B_NEAR', label:'가까이 있음', cxN, cyN };
-    return null;
-  }else{
-    // 가로: 왼/오 + (중앙이면 중심 이벤트 유지: xBand=1 AND yBand=1)
-    if(xBand === 0) return { code:'B_LEFT', label:'왼쪽에 있음', cxN, cyN };
-    if(xBand === 2) return { code:'B_RIGHT', label:'오른쪽에 있음', cxN, cyN };
-    if(xBand === 1 && yBand === 1) return { code:'B_CENTER', label:'중심에 있음', cxN, cyN };
-    return null;
+  const idx = row*3 + col;
+
+  switch(idx){
+    case 0: return {code:'B_FAR_LEFT',   label:'멀리 왼쪽',   cxN, cyN, row, col};
+    case 1: return {code:'B_FAR',        label:'멀리 있음',   cxN, cyN, row, col};
+    case 2: return {code:'B_FAR_RIGHT',  label:'멀리 오른쪽', cxN, cyN, row, col};
+    case 3: return {code:'B_LEFT',       label:'왼쪽에 있음', cxN, cyN, row, col};
+    case 4: return {code:'B_CENTER',     label:'중심에 있음', cxN, cyN, row, col};
+    case 5: return {code:'B_RIGHT',      label:'오른쪽에 있음', cxN, cyN, row, col};
+    case 6: return {code:'B_LEFT_NEAR',  label:'왼쪽 가까이', cxN, cyN, row, col};
+    case 7: return {code:'B_NEAR',       label:'가까이 있음', cxN, cyN, row, col};
+    case 8: return {code:'B_RIGHT_NEAR', label:'오른쪽 가까이', cxN, cyN, row, col};
+    default: return {code:'B_CENTER', label:'중심에 있음', cxN, cyN, row, col};
   }
 }
 
 /* 공(원형) 인식 한 번 수행 (함수명 runOcrOnVideo 유지) */
-async function runOcrOnVideo(video, fullFrame=false){
+async function runOcrOnVideo(video){
   if(!ocrReady) return {status:'not-ready'};
   if(!video || !video.videoWidth || !video.videoHeight) return {status:'no-frame'};
   if(ocrBusy) return {status:'busy'};
 
-  // 반원(화면 끝)까지 포함해야 하므로 fullFrame 권장
-  const rect = fullFrame
-    ? {x:0,y:0,w:Math.max(1,video.videoWidth||320),h:Math.max(1,video.videoHeight||240)}
-    : getRoiRectFromFocus(video);
-
   ocrBusy = true;
   try{
-    preprocessToOcrCanvas(video, rect);
+    preprocessToOcrCanvas(video);
     const img = ocrCtx.getImageData(0,0, OCR_W, OCR_H);
 
-    // 1) 색상 무관 saliency 마스크
     const mask = buildCircleMask(img, OCR_W, OCR_H);
-
-    // 2) 후보 분석
     const ball = analyzeCandidates(mask, OCR_W, OCR_H);
 
     ocrBusy = false;
 
     if(!ball){
-      // 인식은 1초마다 계속 수행하되, phase 토글은 "프레임 시도 단위"로 유지하고 싶으면 여기서 토글하지 않습니다.
       return {status:'no-ball'};
     }
 
     const conf = computeBallConfidence(ball, OCR_W, OCR_H);
-
-    // ★ phase: 0(멀리/가까이) -> 1(왼/오/중심) -> 반복
-    const phase = detectPhase;
-    detectPhase = 1 - detectPhase;
-
-    const pos = classifyByThirds(ball, OCR_W, OCR_H, phase);
-    if(!pos){
-      // 원형은 찾았지만, 이번 단계(세로/가로)에서 해당 이벤트가 없음(중간 영역 등)
-      return { status:'no-event', phase, conf: conf, ball: { cx:(ball.cx+0.5)/OCR_W, cy:(ball.cy+0.5)/OCR_H, edge:ball.touchesEdge } };
-    }
+    const pos = classifyGrid9(ball, OCR_W, OCR_H);
 
     return {
       status:'ok',
-      digit: pos.label,     // UI 표시
-      conf: conf,           // %
-      gesture: pos.code,    // 이벤트 키
-      phase: phase,
+      digit: pos.label,
+      conf: conf,
+      gesture: pos.code,
+      cell: {row:pos.row, col:pos.col},
       ball: { cx:pos.cxN, cy:pos.cyN, edge:ball.touchesEdge }
     };
   }catch(e){
@@ -1976,12 +1970,10 @@ async function runOcrOnVideo(video, fullFrame=false){
   }
 }
 
-/* 인식 실패 사유 */
 function describeNoDigitReason(res){
   if(!res || typeof res.status!=='string') return '인식 실패';
   switch(res.status){
     case 'no-ball': return '원형 물체가 보이지 않음';
-    case 'no-event': return '중간 영역(이번 단계 해당없음)';
     case 'no-frame': return '카메라 프레임 없음';
     case 'not-ready': return '원형 인식 준비중';
     case 'busy': return '이전 인식 처리중';
@@ -1993,7 +1985,7 @@ function describeNoDigitReason(res){
 /* 1초 파이프라인 */
 let panelLastDetectTs = 0;
 let overlayLastDetectTs = 0;
-let lastStateKey = null;  // "gesture" 또는 "NONE"
+let lastStateKey = null;
 
 /* 변화가 있을 때만 로그 */
 function handleDigitPipeline(res, source){
@@ -2045,11 +2037,6 @@ function handleDigitPipeline(res, source){
 /* 패널 감지 루프 */
 function startDetectLoop(){
   panelLastDetectTs = 0;
-  if(focusBox){
-    focusBox.style.left='50%';
-    focusBox.style.top ='50%';
-    focusBox.style.opacity='.18';
-  }
 
   const step = async ()=>{
     if(!camOn || camVideo.readyState < 2){
@@ -2062,7 +2049,11 @@ function startDetectLoop(){
       const now = performance.now();
       if(now - panelLastDetectTs >= DETECT_PERIOD_MS){
         panelLastDetectTs = now;
-        const res = await runOcrOnVideo(camVideo, true);
+
+        // ★ 라인 위치를 실제 영상 표시영역에 맞춤(9등분)
+        syncGridOverlayToVideo(camVideo, camWrap, gridOverlayPanel);
+
+        const res = await runOcrOnVideo(camVideo);
         handleDigitPipeline(res, 'panel');
       }
     }
@@ -2088,7 +2079,6 @@ let overlayBlinkTimer = null;
 let ovCurrent = {x:0, y:0};
 let ovTarget  = {x:0, y:0};
 
-/* 눈꺼풀 깜빡임 */
 function scheduleOverlayBlink(){
   clearTimeout(overlayBlinkTimer);
   const t = 2200 + Math.random()*3300;
@@ -2102,7 +2092,6 @@ function scheduleOverlayBlink(){
   }, t);
 }
 
-/* 동공 렌더 */
 function renderPupils(nx, ny){
   ovEyes.forEach((eye, i) => {
     const rect = eye.getBoundingClientRect();
@@ -2118,14 +2107,12 @@ function renderPupils(nx, ny){
   });
 }
 
-/* 배지 갱신 */
 function overlayShowDigit(d){
   if(!overlayDigitBadge) return;
   overlayDigitVal.textContent = (d==null || d==='') ? '—' : String(d);
   overlayDigitBadge.style.display = 'inline-flex';
 }
 
-/* 터치/드래그로 시선 이동 */
 let overlayPointerIdleTimer = null;
 function setOverlayTarget(nx,ny){
   ovTarget.x = Math.max(-1, Math.min(1,nx));
@@ -2141,7 +2128,6 @@ function handleOverlayPointer(e){
   overlayPointerIdleTimer = setTimeout(()=> { setOverlayTarget(0,0); }, 900);
 }
 
-/* 더블 탭/클릭 종료 */
 let lastTap=0;
 function onOverlayPointerDown(e){
   const now = e.timeStamp || Date.now();
@@ -2154,7 +2140,6 @@ function onOverlayPointerDown(e){
 }
 function onOverlayDblClick(){ stopRun(); }
 
-/* 오버레이 루프 */
 async function startOverlayEyes(){
   if(eyesRAF){ cancelAnimationFrame(eyesRAF); eyesRAF = null; }
   overlayShowDigit(null);
@@ -2187,7 +2172,11 @@ async function startOverlayEyes(){
     const now = performance.now();
     if(now - overlayLastDetectTs >= DETECT_PERIOD_MS){
       overlayLastDetectTs = now;
-      const res = await runOcrOnVideo(eyesCam, true);
+
+      // ★ 라인 위치를 실제 영상 표시영역에 맞춤(전체화면)
+      syncGridOverlayToVideo(eyesCam, document.getElementById('ovCamWrap'), gridOverlayOverlay);
+
+      const res = await runOcrOnVideo(eyesCam);
       handleDigitPipeline(res, 'overlay');
 
       if(res && res.status==='ok' && res.digit!=null){
@@ -2215,8 +2204,6 @@ function stopOverlayEyes(){
   overlayEl.removeEventListener('pointerdown', onOverlayPointerDown);
   overlayEl.removeEventListener('dblclick', onOverlayDblClick);
 }
-
-/* ================= 끝: 메인 스크립트 ================= */
 </script>
 
 <!-- 좌우 슬라이더 / 파일 메뉴 -->
@@ -2702,13 +2689,11 @@ function stopOverlayEyes(){
   }
 
   function afterEditorOpened(field){
-    let found = false;
     const adopt = ()=>{
       const input = findBlocklyInput();
       if(input){
         if(!pad || !pad.classList.contains('show')) showPad();
         openForInput(input, field);
-        found = true;
         return true;
       }
       return false;
@@ -2753,16 +2738,6 @@ function stopOverlayEyes(){
         }
         return rv;
       };
-      const origPrompt = proto.showPromptEditor_;
-      if(typeof origPrompt === 'function'){
-        proto.showPromptEditor_ = function(){
-          if((typeof Blockly.FieldNumber!=='undefined') && (this instanceof Blockly.FieldNumber)){
-            openForPrompt(this.getValue ? this.getValue() : '', lastAnchor);
-            return;
-          }
-          return origPrompt.apply(this, arguments);
-        };
-      }
       Blockly.FieldTextInput.__xrobo_v14 = true;
     }catch(_){}
   }
@@ -2783,18 +2758,6 @@ function stopOverlayEyes(){
           }
         });
         Blockly.dialog.__xrobo_v14 = true;
-      }else if(!Blockly.__xrobo_prompt_v14){
-        const old = Blockly.prompt;
-        Blockly.prompt = function(message, defaultValue, callback){
-          const looksNumeric = numLike(defaultValue) || /value|값|number|숫자/i.test(String(message||''));
-          if(looksNumeric){
-            promptCallback = v=>{ try{ callback(v); }catch(_){ }};
-            openForPrompt(defaultValue, lastAnchor);
-          }else{
-            return old ? old.apply(this, arguments) : window.prompt(message, defaultValue);
-          }
-        };
-        Blockly.__xrobo_prompt_v14 = true;
       }
     }catch(_){}
   }
@@ -2807,24 +2770,6 @@ function stopOverlayEyes(){
       openForInput(t, null);
       const onBlur = ()=>{ try{ commit(); }catch(_){ cancel(); } t.removeEventListener('blur', onBlur); };
       t.addEventListener('blur', onBlur);
-    }else{
-      try{
-        const uaOk = /Android/i.test(navigator.userAgent||'');
-        if(uaOk && t.matches('#servoModal .speedbox input, #boardStage .speedbox input')){
-          try{
-            t.setAttribute('inputmode','none');
-            t.setAttribute('autocomplete','off');
-            t.setAttribute('autocorrect','off');
-          }catch(_){}
-          try{
-            t.setAttribute('readonly','readonly');
-            setTimeout(()=>{ try{ t.removeAttribute('readonly'); }catch(_){ } }, 0);
-          }catch(_){}
-          openForInput(t, null);
-          const onBlur = ()=>{ try{ commit(); }catch(_){ cancel(); } t.removeEventListener('blur', onBlur); };
-          t.addEventListener('blur', onBlur);
-        }
-      }catch(_){}
     }
   }, true);
 

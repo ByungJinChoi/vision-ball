@@ -1367,6 +1367,9 @@ var queue = [];
 var queueBusy = false;
 var cancelToken = 0;
 
+/* ★ 번갈아 인식 단계: 0=세로(멀리/가까이), 1=가로(왼/오/중심) */
+let detectPhase = 0;
+
 function sendRaw(s){
   if(!writeChar){
     log('➡️(BLE 미연결) '+s);
@@ -1454,6 +1457,7 @@ function startTest(){
   cancelToken++;
   queue = [];
   isFullscreenRun = false;
+  detectPhase = 0; // ★ 항상 멀리/가까이부터 시작
   setRunning(true);
 }
 
@@ -1465,6 +1469,7 @@ async function startFullRun(){
   cancelToken++;
   queue = [];
   isFullscreenRun = true;
+  detectPhase = 0; // ★ 항상 멀리/가까이부터 시작
   setRunning(true);
 
   overlay.classList.add('show');
@@ -1545,9 +1550,6 @@ const BG_MIN_MEAN = 90;
 const GRAY_MIN_RATIO = 0.75;
 const COLOR_TOLERANCE = 24;
 
-/* ★ 중심 판정 오차(화면 중심 기준 10%) */
-const CENTER_TOL = 0.10;
-
 let camStream = null, camOn = false, camRAF = null;
 
 const procCvs = document.createElement('canvas');
@@ -1620,7 +1622,7 @@ function stopCam(){
 }
 camToggle.onclick = ()=> camOn ? stopCam() : startCam();
 
-/* ===== 공 인식 준비(함수/변수명은 원본 흐름 유지) ===== */
+/* ===== 공(동그라미) 인식 준비(함수/변수명은 원본 흐름 유지) ===== */
 let ocrWorker = null;
 let ocrReady = false;
 let ocrBusy = false;
@@ -1628,10 +1630,10 @@ let ocrBusy = false;
 async function ensureOcr(){
   if(ocrReady) return;
   try{
-    // 별도 라이브러리 없이 캔버스 기반 공 인식 준비만 수행
-    ocrWorker = { kind:'BALL_DETECTOR' };
+    // 별도 라이브러리 없이 캔버스 기반 원형 후보 탐색
+    ocrWorker = { kind:'CIRCLE_DETECTOR' };
     ocrReady = true;
-    log('⚪🟠 공 인식 준비 완료');
+    log('⭕ 원형(동그라미) 물체 인식 준비 완료');
   }catch(e){
     log('❌ 공 인식 초기화 실패: '+e);
   }
@@ -1648,7 +1650,7 @@ function getRoiRectFromFocus(video, fracW=0.7, fracH=0.7){
   return { x:x0, y:y0, w:rw, h:rh, vw, vh };
 }
 
-/* ROI/프레임 전처리: 캔버스에 그리기 (화면 표시와 동일하게 좌우 반전 적용) */
+/* 전처리: 캔버스에 그리기 (화면 표시와 동일하게 좌우 반전 적용) */
 function preprocessToOcrCanvas(video, rect){
   try{
     ocrCtx.save();
@@ -1662,85 +1664,154 @@ function preprocessToOcrCanvas(video, rect){
   return {};
 }
 
-/* ---------- 공(원/반원) 후보 탐색: 흰색/주황색 우선, 필요시 다른 색 fallback ---------- */
 function clamp01(v){ return Math.max(0, Math.min(1, v)); }
 
-function buildMaskAndType(img, w, h, mode){
-  // mode: 'preferred' | 'any'
+/* Otsu threshold */
+function otsuThreshold(hist, total){
+  let sum = 0;
+  for(let t=0;t<256;t++) sum += t * hist[t];
+
+  let sumB = 0;
+  let wB = 0;
+  let wF = 0;
+  let varMax = -1;
+  let thr = 0;
+
+  for(let t=0;t<256;t++){
+    wB += hist[t];
+    if(wB === 0) continue;
+    wF = total - wB;
+    if(wF === 0) break;
+
+    sumB += t * hist[t];
+    const mB = sumB / wB;
+    const mF = (sum - sumB) / wF;
+
+    const diff = (mB - mF);
+    const between = wB * wF * diff * diff;
+    if(between > varMax){
+      varMax = between;
+      thr = t;
+    }
+  }
+  return thr;
+}
+
+/* saliency 기반 마스크: 색상 무관(밝기 변화 + 컬러차이(diff)) */
+function buildCircleMask(img, w, h){
   const d = img.data;
   const n = w*h;
-  const mask = new Uint8Array(n);
-  const type = new Uint8Array(n); // 0 none, 1 white, 2 orange, 3 other
 
-  for(let i=0, p=0; i<n; i++, p+=4){
+  // 1) 평균 밝기
+  let sumY = 0;
+  for(let i=0,p=0;i<n;i++,p+=4){
+    const r=d[p], g=d[p+1], b=d[p+2];
+    const y = (r*0.299 + g*0.587 + b*0.114);
+    sumY += y;
+  }
+  const meanY = sumY / Math.max(1,n);
+
+  // 2) saliency 히스토그램
+  const sal = new Uint8Array(n);
+  const hist = new Uint32Array(256);
+
+  for(let i=0,p=0;i<n;i++,p+=4){
     const r=d[p], g=d[p+1], b=d[p+2];
     const mx = (r>g? (r>b?r:b) : (g>b?g:b));
     const mn = (r<g? (r<b?r:b) : (g<b?g:b));
-    const diff = mx - mn;
+    const diff = mx - mn; // 색상 차이(채도/컬러감)
 
-    // 흰색(탁구공/골프공 우선)
-    const isWhite = (mx >= 215 && mn >= 170 && diff <= 40);
+    const y = (r*0.299 + g*0.587 + b*0.114);
+    const dy = Math.abs(y - meanY);
 
-    // 주황색(탁구공 우선)
-    // (간단 RGB 휴리스틱: 빨강 우세, 파랑 낮음, 충분히 밝고 채도)
-    const isOrange =
-      (r >= 160 && g >= 80 && b <= 150) &&
-      ((r - g) >= 15) &&
-      ((r - b) >= 70) &&
-      (diff >= 60);
+    // 색상에 상관없이: 밝기차(dy) 또는 색상차(diff)가 큰 픽셀을 후보로
+    let s = dy;
+    if(diff > s) s = diff;
 
-    // 기타 색상 fallback (원하는 경우만)
-    const isOtherColor = (diff >= 80 && mx >= 110);
+    // 0~255 클램프
+    let si = s|0;
+    if(si<0) si=0; else if(si>255) si=255;
 
-    if(isWhite){
-      mask[i]=1; type[i]=1;
-    }else if(isOrange){
-      mask[i]=1; type[i]=2;
-    }else if(mode==='any' && isOtherColor){
-      mask[i]=1; type[i]=3;
+    sal[i]=si;
+    hist[si]++;
+  }
+
+  // 3) Otsu로 임계값 결정 + 최소값 보정
+  let thr = otsuThreshold(hist, n);
+  thr = Math.max(18, thr); // 너무 낮으면 노이즈가 많아짐
+
+  // 4) 마스크 생성
+  let mask = new Uint8Array(n);
+  let cnt = 0;
+  for(let i=0;i<n;i++){
+    if(sal[i] >= thr){
+      mask[i]=1; cnt++;
     }
   }
 
-  // 간단 노이즈 제거(이웃 3개 미만 제거)
-  const copy = mask.slice();
-  for(let y=1; y<h-1; y++){
-    for(let x=1; x<w-1; x++){
-      const idx = y*w + x;
-      if(!copy[idx]) continue;
-      let c=0;
-      // 8-neighborhood
-      c += copy[idx-1]; c += copy[idx+1];
-      c += copy[idx-w]; c += copy[idx+w];
-      c += copy[idx-w-1]; c += copy[idx-w+1];
-      c += copy[idx+w-1]; c += copy[idx+w+1];
-      if(c < 2){
-        mask[idx]=0; type[idx]=0;
+  // 너무 많이 잡히면(조명/배경 변화로 대면적): 임계값을 올려서 재생성
+  if(cnt > n * 0.40){
+    thr = Math.min(255, thr + 18);
+    cnt = 0;
+    mask = new Uint8Array(n);
+    for(let i=0;i<n;i++){
+      if(sal[i] >= thr){
+        mask[i]=1; cnt++;
       }
     }
   }
 
-  return {mask, type};
+  // 5) 1회 dilation(연결 강화)
+  const dil = new Uint8Array(n);
+  for(let y=0;y<h;y++){
+    for(let x=0;x<w;x++){
+      const idx = y*w + x;
+      if(mask[idx] ||
+         (x>0 && mask[idx-1]) ||
+         (x<w-1 && mask[idx+1]) ||
+         (y>0 && mask[idx-w]) ||
+         (y<h-1 && mask[idx+w])){
+        dil[idx]=1;
+      }
+    }
+  }
+
+  // 6) 간단 노이즈 제거(이웃이 너무 적으면 제거)
+  const out = dil.slice();
+  for(let y=1;y<h-1;y++){
+    for(let x=1;x<w-1;x++){
+      const idx = y*w + x;
+      if(!dil[idx]) continue;
+      let c=0;
+      c += dil[idx-1]; c += dil[idx+1];
+      c += dil[idx-w]; c += dil[idx+w];
+      c += dil[idx-w-1]; c += dil[idx-w+1];
+      c += dil[idx+w-1]; c += dil[idx+w+1];
+      if(c < 2) out[idx]=0;
+    }
+  }
+
+  return out;
 }
 
-function analyzeCandidates(mask, type, w, h){
+/* 연결요소 분석 → 가장 원형에 가까운 후보 선택 (반원도 단독이면 OK) */
+function analyzeCandidates(mask, w, h){
   const n = w*h;
   const visited = new Uint8Array(n);
   const cand = [];
 
   const frameArea = n;
-  const MIN_AREA = Math.max(40, Math.floor(frameArea * 0.001));   // 작은 노이즈 제거
-  const MAX_AREA = Math.floor(frameArea * 0.45);                  // 너무 큰 흰 배경 등 제거
+  const MIN_AREA = Math.max(60, Math.floor(frameArea * 0.0012));  // 너무 작은 노이즈 제거
+  const MAX_AREA = Math.floor(frameArea * 0.55);                  // 배경 전체 같은 오검출 제거
 
   const stack = [];
 
   for(let i=0;i<n;i++){
     if(!mask[i] || visited[i]) continue;
 
-    // BFS/DFS
     let area=0, sumX=0, sumY=0;
     let minX=1e9, minY=1e9, maxX=-1e9, maxY=-1e9;
     let touchesEdge=false;
-    let cWhite=0, cOrange=0, cOther=0;
 
     stack.length=0;
     stack.push(i);
@@ -1762,12 +1833,6 @@ function analyzeCandidates(mask, type, w, h){
 
       if(x===0 || y===0 || x===w-1 || y===h-1) touchesEdge=true;
 
-      const t = type[idx];
-      if(t===1) cWhite++;
-      else if(t===2) cOrange++;
-      else if(t===3) cOther++;
-
-      // 4-neighbors
       const up = idx - w;
       const dn = idx + w;
       const lf = idx - 1;
@@ -1783,127 +1848,86 @@ function analyzeCandidates(mask, type, w, h){
 
     const bw = (maxX - minX + 1);
     const bh = (maxY - minY + 1);
-    if(bw < 6 || bh < 6) continue;
+    if(bw < 8 || bh < 8) continue;
 
     const aspect = bw / Math.max(1, bh);
     if(aspect > 3.2 || aspect < 1/3.2) continue;
 
-    const fill = area / (bw * bh); // 원: ~0.785, 반원: ~0.392
-    if(fill < 0.18 || fill > 0.95) continue;
+    const fill = area / (bw * bh); // 원:~0.785, 반원:~0.392 근처
+    if(fill < 0.12 || fill > 0.98) continue;
 
-    // 점수
-    const aspectScore = clamp01(1 - (Math.abs(aspect - 1) / 1.2));
+    const aspectScore = clamp01(1 - (Math.abs(aspect - 1) / 1.25));
     const fillScoreFull = clamp01(1 - (Math.abs(fill - 0.785) / 0.785));
     const fillScoreHalf = clamp01(1 - (Math.abs(fill - 0.392) / 0.392));
     const fillScore = Math.max(fillScoreFull, fillScoreHalf * 0.95);
 
     const shapeScore = clamp01(0.55*aspectScore + 0.45*fillScore);
-
-    // 색 우선: 흰색 > 주황색 > 기타
-    let colorType = 'other';
-    if(cWhite >= cOrange && cWhite >= cOther) colorType='white';
-    else if(cOrange >= cWhite && cOrange >= cOther) colorType='orange';
-
-    const colorWeight = (colorType==='white') ? 1.18 : (colorType==='orange' ? 1.12 : 1.0);
-
-    const baseScore = area * shapeScore * colorWeight;
-    const score = baseScore; // 최종 점수
+    const score = area * shapeScore;
 
     cand.push({
-      area, sumX, sumY,
-      cx: sumX / area,
-      cy: sumY / area,
+      area,
+      cx: (sumX / area),
+      cy: (sumY / area),
       minX, minY, maxX, maxY,
       bw, bh, aspect, fill,
-      fillScoreFull, fillScoreHalf,
       shapeScore,
       touchesEdge,
-      colorType,
       score
     });
   }
 
   if(!cand.length) return null;
 
-  // 가장 점수 높은 후보
   cand.sort((a,b)=>b.score-a.score);
   const best = cand[0];
 
-  // "반원은 다른 공이 없을 때만": 가장 좋은 비-엣지 후보가 충분히 좋으면 그걸 선택
+  // 반원(화면 끝)도 가능하지만, 화면 내부의 더 좋은 원이 있으면 그걸 우선
   const bestNonEdge = cand.find(c=>!c.touchesEdge) || null;
   if(bestNonEdge && best.touchesEdge){
-    if(bestNonEdge.score >= best.score * 0.70){
+    if(bestNonEdge.score >= best.score * 0.72){
       return bestNonEdge;
     }
   }
   return best;
 }
 
-function classifyBallPosition(ball, w, h){
-  // 중심/좌우/거리 판정
-  const cxN = (ball.cx + 0.5) / w;
-  const cyN = (ball.cy + 0.5) / h;
-
-  const rxN = (ball.bw * 0.5) / w;
-  const ryN = (ball.bh * 0.5) / h;
-
-  // 1) 멀리/가까이 우선 (세로 중심 기준, ±10%는 중간 영역으로 남겨둠)
-  if(cyN < 0.5 - CENTER_TOL){
-    return { code:'B_FAR', label:'멀리 있음', cxN, cyN };
-  }
-  if(cyN > 0.5 + CENTER_TOL){
-    return { code:'B_NEAR', label:'가까이 있음', cxN, cyN };
-  }
-
-  // 2) 중심: "동그라미 전체가" 중심 근처(±10%) 안에 들어온 경우
-  const centerBoxL = 0.5 - CENTER_TOL, centerBoxR = 0.5 + CENTER_TOL;
-  const centerBoxT = 0.5 - CENTER_TOL, centerBoxB = 0.5 + CENTER_TOL;
-
-  const fullCircleLike = (!ball.touchesEdge) && (ball.fillScoreFull >= (ball.fillScoreHalf * 0.90));
-  const fullyInsideCenterBox =
-    (cxN - rxN) >= centerBoxL &&
-    (cxN + rxN) <= centerBoxR &&
-    (cyN - ryN) >= centerBoxT &&
-    (cyN + ryN) <= centerBoxB;
-
-  if(fullCircleLike && fullyInsideCenterBox){
-    return { code:'B_CENTER', label:'중심에 있음', cxN, cyN };
-  }
-
-  // 3) 좌/우
-  if(cxN < 0.5){
-    return { code:'B_LEFT', label:'왼쪽에 있음', cxN, cyN };
-  }
-  return { code:'B_RIGHT', label:'오른쪽에 있음', cxN, cyN };
-}
-
-function computeBallConfidence(ball, w, h, mode){
+function computeBallConfidence(ball, w, h){
   const frameArea = w*h;
   const areaNorm = clamp01(ball.area / Math.max(1, frameArea * 0.02));
-
-  let conf = 0.15 + 0.75*ball.shapeScore + 0.10*areaNorm;
-
-  // 색상 우선 반영(흰/주황 조금 가산, 기타는 약간 감산)
-  if(mode==='preferred'){
-    if(ball.colorType==='white') conf += 0.06;
-    else if(ball.colorType==='orange') conf += 0.04;
-  }else{
-    if(ball.colorType==='other') conf -= 0.07;
-  }
-
-  // 반원(엣지)도 가능하되, 아주 약하게만 감산
-  if(ball.touchesEdge) conf -= 0.03;
-
+  let conf = 0.12 + 0.78*ball.shapeScore + 0.18*areaNorm;
+  if(ball.touchesEdge) conf -= 0.03; // 반원이어도 유지(소폭만 감산)
   return clamp01(conf) * 100;
 }
 
-/* 공 위치 인식 한 번 수행 (함수명 runOcrOnVideo 유지) */
+/* ★ 3등분 판정 + 번갈아 인식 */
+function classifyByThirds(ball, w, h, phase){
+  const cxN = (ball.cx + 0.5) / w;
+  const cyN = (ball.cy + 0.5) / h;
+
+  const xBand = Math.max(0, Math.min(2, Math.floor(cxN * 3)));
+  const yBand = Math.max(0, Math.min(2, Math.floor(cyN * 3)));
+
+  if(phase === 0){
+    // 세로: 위=멀리, 아래=가까이, 중간=해당없음
+    if(yBand === 0) return { code:'B_FAR', label:'멀리 있음', cxN, cyN };
+    if(yBand === 2) return { code:'B_NEAR', label:'가까이 있음', cxN, cyN };
+    return null;
+  }else{
+    // 가로: 왼/오 + (중앙이면 중심 이벤트 유지: xBand=1 AND yBand=1)
+    if(xBand === 0) return { code:'B_LEFT', label:'왼쪽에 있음', cxN, cyN };
+    if(xBand === 2) return { code:'B_RIGHT', label:'오른쪽에 있음', cxN, cyN };
+    if(xBand === 1 && yBand === 1) return { code:'B_CENTER', label:'중심에 있음', cxN, cyN };
+    return null;
+  }
+}
+
+/* 공(원형) 인식 한 번 수행 (함수명 runOcrOnVideo 유지) */
 async function runOcrOnVideo(video, fullFrame=false){
   if(!ocrReady) return {status:'not-ready'};
   if(!video || !video.videoWidth || !video.videoHeight) return {status:'no-frame'};
   if(ocrBusy) return {status:'busy'};
 
-  // 공은 화면 끝(반원)도 인식해야 하므로 기본은 fullFrame 권장
+  // 반원(화면 끝)까지 포함해야 하므로 fullFrame 권장
   const rect = fullFrame
     ? {x:0,y:0,w:Math.max(1,video.videoWidth||320),h:Math.max(1,video.videoHeight||240)}
     : getRoiRectFromFocus(video);
@@ -1913,33 +1937,38 @@ async function runOcrOnVideo(video, fullFrame=false){
     preprocessToOcrCanvas(video, rect);
     const img = ocrCtx.getImageData(0,0, OCR_W, OCR_H);
 
-    // 1) 흰색/주황색 우선
-    let mode = 'preferred';
-    let mt = buildMaskAndType(img, OCR_W, OCR_H, mode);
-    let ball = analyzeCandidates(mt.mask, mt.type, OCR_W, OCR_H);
+    // 1) 색상 무관 saliency 마스크
+    const mask = buildCircleMask(img, OCR_W, OCR_H);
 
-    // 2) 없으면 다른 색도 허용(정확도 떨어질 수 있으나 fallback)
-    if(!ball){
-      mode = 'any';
-      mt = buildMaskAndType(img, OCR_W, OCR_H, mode);
-      ball = analyzeCandidates(mt.mask, mt.type, OCR_W, OCR_H);
-    }
+    // 2) 후보 분석
+    const ball = analyzeCandidates(mask, OCR_W, OCR_H);
 
     ocrBusy = false;
 
     if(!ball){
+      // 인식은 1초마다 계속 수행하되, phase 토글은 "프레임 시도 단위"로 유지하고 싶으면 여기서 토글하지 않습니다.
       return {status:'no-ball'};
     }
 
-    const pos = classifyBallPosition(ball, OCR_W, OCR_H);
-    const conf = computeBallConfidence(ball, OCR_W, OCR_H, mode);
+    const conf = computeBallConfidence(ball, OCR_W, OCR_H);
+
+    // ★ phase: 0(멀리/가까이) -> 1(왼/오/중심) -> 반복
+    const phase = detectPhase;
+    detectPhase = 1 - detectPhase;
+
+    const pos = classifyByThirds(ball, OCR_W, OCR_H, phase);
+    if(!pos){
+      // 원형은 찾았지만, 이번 단계(세로/가로)에서 해당 이벤트가 없음(중간 영역 등)
+      return { status:'no-event', phase, conf: conf, ball: { cx:(ball.cx+0.5)/OCR_W, cy:(ball.cy+0.5)/OCR_H, edge:ball.touchesEdge } };
+    }
 
     return {
       status:'ok',
       digit: pos.label,     // UI 표시
       conf: conf,           // %
       gesture: pos.code,    // 이벤트 키
-      ball: { cx:pos.cxN, cy:pos.cyN, edge:ball.touchesEdge, color:ball.colorType }
+      phase: phase,
+      ball: { cx:pos.cxN, cy:pos.cyN, edge:ball.touchesEdge }
     };
   }catch(e){
     ocrBusy = false;
@@ -1951,11 +1980,12 @@ async function runOcrOnVideo(video, fullFrame=false){
 function describeNoDigitReason(res){
   if(!res || typeof res.status!=='string') return '인식 실패';
   switch(res.status){
-    case 'no-ball': return '공이 보이지 않음';
+    case 'no-ball': return '원형 물체가 보이지 않음';
+    case 'no-event': return '중간 영역(이번 단계 해당없음)';
     case 'no-frame': return '카메라 프레임 없음';
-    case 'not-ready': return '공 인식 준비중';
+    case 'not-ready': return '원형 인식 준비중';
     case 'busy': return '이전 인식 처리중';
-    case 'error': return '공 인식 오류';
+    case 'error': return '원형 인식 오류';
     default: return '인식 실패';
   }
 }
@@ -2032,7 +2062,6 @@ function startDetectLoop(){
       const now = performance.now();
       if(now - panelLastDetectTs >= DETECT_PERIOD_MS){
         panelLastDetectTs = now;
-        // ★ 공은 화면 끝(반원)도 인식해야 하므로 fullFrame=true
         const res = await runOcrOnVideo(camVideo, true);
         handleDigitPipeline(res, 'panel');
       }
@@ -2158,7 +2187,6 @@ async function startOverlayEyes(){
     const now = performance.now();
     if(now - overlayLastDetectTs >= DETECT_PERIOD_MS){
       overlayLastDetectTs = now;
-      // ★ 공은 화면 끝(반원)도 인식해야 하므로 fullFrame=true
       const res = await runOcrOnVideo(eyesCam, true);
       handleDigitPipeline(res, 'overlay');
 

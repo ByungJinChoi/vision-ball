@@ -159,10 +159,10 @@
 
     // 내부가 단색에 가까워야 함(무늬/패턴 억제)
     innerChromaStdMax: 26,  // sqrt(stdA^2 + stdB^2)
-    innerLStdMax:      62,  // 밝기 표준편차(검은 격자/무늬 제거에 중요)
+    innerLStdMax:      72,  // 밝기 표준편차(검은 격자/무늬 제거에 중요)
 
     // 내부 텍스처(에지)가 경계에 비해 너무 크면 패턴으로 간주
-    insideEdgeRatioMax: 0.72, // insideMagMean / ringMagMean
+    insideEdgeRatioMax: 0.78, // insideMagMean / ringMagMean
 
     // 공(원)과 주변(바깥쪽) 차이가 아주 없으면(배경에서 만든 가짜 원) 제거
     outerContrastLMin: 8,   // |L_in - L_out|

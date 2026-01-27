@@ -3,13 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
-  <title>색상 뭉치(Blob) 외곽선 표시 테스트</title>
+  <title>AI 공(sports ball) 탐지 테스트 (COCO-SSD + 밝기/그림자)</title>
 
   <style>
     :root{
       --bg:#0b0f14;
       --fg:#e5e7eb;
       --muted:#9ca3af;
+      --blue:#2563eb;
+      --red:#ef4444;
     }
     *{ box-sizing:border-box; }
     html,body{ height:100%; margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--fg); }
@@ -29,13 +31,13 @@
       border:0;
       border-radius:10px;
       padding:10px 14px;
-      font-weight:800;
+      font-weight:900;
       cursor:pointer;
-      background:#2563eb;
+      background:var(--blue);
       color:white;
       box-shadow:0 6px 18px rgba(0,0,0,.25);
     }
-    .btn.off{ background:#ef4444; }
+    .btn.off{ background:var(--red); }
 
     .pill{
       display:inline-flex;
@@ -46,6 +48,7 @@
       border:1px solid rgba(255,255,255,.14);
       background: rgba(0,0,0,.25);
       font: 800 13px/1 system-ui;
+      white-space:nowrap;
     }
     .pill .muted{ color:var(--muted); font-weight:700; }
 
@@ -56,6 +59,7 @@
       padding:12px;
       gap:12px;
     }
+
     .stage{
       flex:1 1 auto;
       min-height: 260px;
@@ -83,13 +87,13 @@
       display:flex;
       gap:10px;
       flex-wrap:wrap;
-      align-items:center;
+      align-items:flex-start;
       justify-content:space-between;
     }
     .small{
       color:var(--muted);
       font-size:12px;
-      line-height:1.4;
+      line-height:1.45;
       white-space:pre-wrap;
     }
     code{
@@ -98,41 +102,48 @@
       border:1px solid rgba(16,185,129,.25);
       padding:2px 6px;
       border-radius:8px;
-      font-weight:800;
+      font-weight:900;
     }
+
+    .row{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+    input[type="range"]{ width: 180px; }
+    label{ font-size:12px; color:var(--muted); font-weight:800; }
   </style>
 
-  <script>
-    let cvReady = false;
-    function setStatus(msg){
-      const el = document.getElementById('statusText');
-      if(el) el.textContent = msg;
-    }
-    function onOpenCvScriptLoaded(){
-      if(typeof cv === 'undefined'){
-        setStatus('OpenCV 로딩 실패(네트워크/차단 확인)');
-        return;
-      }
-      cv['onRuntimeInitialized'] = () => {
-        cvReady = true;
-        setStatus('OpenCV 준비완료');
-      };
-      setStatus('OpenCV 런타임 초기화중...');
-    }
-  </script>
-  <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvScriptLoaded()"></script>
+  <!-- TensorFlow.js + COCO-SSD -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd/dist/coco-ssd.min.js"></script>
 </head>
 
 <body>
   <header>
-    <div class="title">🎥 색상 뭉치(Blob) 외곽선 표시 테스트</div>
+    <div class="title">🎥 AI 공(sports ball) 탐지 테스트 (COCO-SSD)</div>
     <div class="spacer"></div>
+
     <button id="camBtn" class="btn">캠 켜기</button>
-    <span class="pill"><span class="muted">상태</span> <span id="statusText">OpenCV 로딩중...</span></span>
-    <span class="pill"><span class="muted">외곽선</span> <span id="countText">—</span></span>
+
+    <span class="pill"><span class="muted">모델</span> <span id="modelStatus">로딩중…</span></span>
+    <span class="pill"><span class="muted">탐지</span> <span id="detCount">—</span></span>
+    <span class="pill"><span class="muted">위치</span> <span id="zoneText">—</span></span>
+    <span class="pill"><span class="muted">밝기</span> <span id="lightText">—</span></span>
   </header>
 
   <main>
+    <div class="row">
+      <label>탐지 주기(ms)</label>
+      <input id="period" type="range" min="150" max="1200" step="50" value="450">
+      <code id="periodVal">450</code>
+
+      <label>최소 신뢰도</label>
+      <input id="thr" type="range" min="0.15" max="0.75" step="0.05" value="0.35">
+      <code id="thrVal">0.35</code>
+    </div>
+
     <div class="stage" id="stage">
       <video id="video" playsinline autoplay muted></video>
       <canvas id="overlay"></canvas>
@@ -140,54 +151,46 @@
 
     <div class="footer">
       <div class="small">
-        목표: “같은 계열 색상 덩어리”를 찾아 외곽선으로 표시 (여러 개면 여러 개 전부 표시)
-        • 색상 분할: HSV (Hue 8분할 + 무채색(흰/회색) 그룹)
-        • 조명 그라데이션(밝기 변화)은 허용: 색상 계열(Hue/Sat) 중심
-        • 처리 주기: <code>0.25초</code> (원하면 DETECT_MS 조절 가능)
+- 라이브러리: <code>TensorFlow.js + COCO-SSD</code> (class: <code>sports ball</code>)
+- 장점: 패턴 배경에서도 “원처럼 보이는 무늬”에 덜 속음
+- 밝기/그림자: 공 ROI 평균 밝기 + 주변 배경 대비로 <code>밝음/보통/어두움</code> 표시
       </div>
-      <div class="small" id="debugText"></div>
+      <div class="small" id="debug"></div>
     </div>
   </main>
 
 <script>
 (() => {
-  // === 사용자가 바꿔가며 보기 좋은 값들 ===
-  const DETECT_MS = 250;          // 처리 주기 (ms)
-  const PROC_W = 360;             // 처리 해상도(가로). 낮출수록 빠름
-  const HUE_BINS = 8;             // 색상 계열(빨/주/노/초/청/파/보 등) 분할 개수
-  const SAT_MIN_COLOR = 25;       // 이 값보다 채도가 낮으면 “무채색(흰/회색)”으로 취급
-  const VAL_MIN = 35;             // 너무 어두운 픽셀 제외(노이즈 감소)
-  const MIN_AREA_PX = 60;        // 너무 작은 blob 제외 (필요시 60~200 사이로 조절)
-
-  // 마스크 정리(노이즈 제거/구멍 메움)
-  const MORPH_OPEN = 1;           // 1이면 열기 적용
-  const MORPH_CLOSE = 1;          // 1이면 닫기 적용
-  const KERNEL_SIZE = 3;          // 3 또는 5 추천
-
   const video = document.getElementById('video');
   const stage = document.getElementById('stage');
   const overlay = document.getElementById('overlay');
   const octx = overlay.getContext('2d');
 
   const camBtn = document.getElementById('camBtn');
-  const countText = document.getElementById('countText');
-  const debugText = document.getElementById('debugText');
+  const modelStatus = document.getElementById('modelStatus');
+  const detCount = document.getElementById('detCount');
+  const zoneText = document.getElementById('zoneText');
+  const lightText = document.getElementById('lightText');
+  const debug = document.getElementById('debug');
+
+  const period = document.getElementById('period');
+  const periodVal = document.getElementById('periodVal');
+  const thr = document.getElementById('thr');
+  const thrVal = document.getElementById('thrVal');
+
+  period.addEventListener('input', ()=> periodVal.textContent = period.value);
+  thr.addEventListener('input', ()=> thrVal.textContent = Number(thr.value).toFixed(2));
 
   let stream = null;
   let camOn = false;
+
+  let model = null;
   let busy = false;
-  let lastTs = 0;
-  let rafId = 0;
+  let lastDetectAt = 0;
 
-  // 처리용 캔버스(축소)
-  const proc = document.createElement('canvas');
-  const pctx = proc.getContext('2d', { willReadFrequently:true });
-  proc.width = PROC_W;
-  proc.height = Math.round(PROC_W * 3/4);
-
-  // OpenCV overlay를 그릴 캔버스(숨김)
-  const visCanvas = document.createElement('canvas');
-  const visCtx = visCanvas.getContext('2d');
+  // 밝기 측정용 캔버스(작게)
+  const snap = document.createElement('canvas');
+  const sctx = snap.getContext('2d', { willReadFrequently:true });
 
   function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
 
@@ -202,205 +205,283 @@
     octx.setTransform(dpr,0,0,dpr,0,0);
   }
 
-  // object-fit: contain 에 맞춰 오버레이 정렬
+  // object-fit: contain 에 맞춘 video 표시 영역
   function getDisplayRect(){
     const vw = video.videoWidth || 0;
     const vh = video.videoHeight || 0;
     const ww = stage.clientWidth || 1;
     const wh = stage.clientHeight || 1;
-    if(vw <= 0 || vh <= 0) return {left:0, top:0, width:ww, height:wh};
+    if(vw <= 0 || vh <= 0) return {left:0, top:0, width:ww, height:wh, scaleX:1, scaleY:1};
 
     const s = Math.min(ww / vw, wh / vh);
     const dw = vw * s;
     const dh = vh * s;
     const left = (ww - dw) / 2;
     const top  = (wh - dh) / 2;
-    return {left, top, width:dw, height:dh};
+    return {left, top, width:dw, height:dh, scaleX:s, scaleY:s};
   }
 
-  function hsvHueColor(binIndex){
-    // binIndex(0..HUE_BINS-1)을 HSV 색으로 매핑해 외곽선 색상용 RGB를 만듦
-    // (색이 뒤바뀌어도 기능에는 문제 없음. 구분만 되면 됨)
-    const hue = (binIndex / HUE_BINS) * 360; // 0..360
-    const s = 0.95, v = 1.0;
-    const c = v * s;
-    const x = c * (1 - Math.abs((hue/60) % 2 - 1));
-    const m = v - c;
-    let r=0,g=0,b=0;
-    if(hue<60){ r=c; g=x; b=0; }
-    else if(hue<120){ r=x; g=c; b=0; }
-    else if(hue<180){ r=0; g=c; b=x; }
-    else if(hue<240){ r=0; g=x; b=c; }
-    else if(hue<300){ r=x; g=0; b=c; }
-    else { r=c; g=0; b=x; }
-    return [Math.round((r+m)*255), Math.round((g+m)*255), Math.round((b+m)*255), 255];
+  function zoneFromPoint(cx, cy, vw, vh){
+    const cw = vw / 3;
+    const ch = vh / 3;
+    let col = Math.floor(cx / cw);
+    let row = Math.floor(cy / ch);
+    col = clamp(col, 0, 2);
+    row = clamp(row, 0, 2);
+    return row * 3 + col + 1;
   }
 
-  function drawVisToOverlay(){
-    resizeOverlay();
-    octx.clearRect(0,0, overlay.width, overlay.height);
-    const rect = getDisplayRect();
-    // visCanvas를 영상 영역에 맞춰 그리기
-    octx.drawImage(visCanvas, rect.left, rect.top, rect.width, rect.height);
-  }
+  function drawGrid(rect){
+    const x0 = rect.left, y0 = rect.top, w = rect.width, h = rect.height;
 
-  function buildHueMask(hsv, h0, h1, sMin, vMin){
-    // OpenCV HSV: H=0..179, S=0..255, V=0..255
-    // h0~h1 범위를 mask로 만들되, wrap-around 처리
-    const mask = new cv.Mat();
-    if(h0 <= h1){
-      const low  = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [h0, sMin, vMin, 0]);
-      const high = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [h1, 255, 255, 255]);
-      cv.inRange(hsv, low, high, mask);
-      low.delete(); high.delete();
-    }else{
-      // wrap: [h0..179] U [0..h1]
-      const maskA = new cv.Mat();
-      const maskB = new cv.Mat();
-      {
-        const low  = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [h0, sMin, vMin, 0]);
-        const high = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [179, 255, 255, 255]);
-        cv.inRange(hsv, low, high, maskA);
-        low.delete(); high.delete();
+    octx.strokeStyle = 'rgba(255,255,255,0.9)';
+    octx.lineWidth = 1;
+    octx.beginPath();
+    octx.moveTo(x0 + w/3, y0);      octx.lineTo(x0 + w/3, y0 + h);
+    octx.moveTo(x0 + 2*w/3, y0);    octx.lineTo(x0 + 2*w/3, y0 + h);
+    octx.moveTo(x0, y0 + h/3);      octx.lineTo(x0 + w, y0 + h/3);
+    octx.moveTo(x0, y0 + 2*h/3);    octx.lineTo(x0 + w, y0 + 2*h/3);
+    octx.stroke();
+
+    octx.font = '900 16px system-ui';
+    octx.textAlign = 'center';
+    octx.textBaseline = 'middle';
+
+    for(let r=0;r<3;r++){
+      for(let c=0;c<3;c++){
+        const n = r*3 + c + 1;
+        const cx = x0 + (c+0.5)*(w/3);
+        const cy = y0 + (r+0.5)*(h/3);
+        octx.fillStyle = 'rgba(0,0,0,0.28)';
+        octx.strokeStyle = 'rgba(255,255,255,0.22)';
+        octx.lineWidth = 1;
+        octx.beginPath();
+        octx.arc(cx, cy, 14, 0, Math.PI*2);
+        octx.fill();
+        octx.stroke();
+        octx.fillStyle = 'rgba(255,255,255,0.95)';
+        octx.fillText(String(n), cx, cy);
       }
-      {
-        const low  = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [0, sMin, vMin, 0]);
-        const high = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [h1, 255, 255, 255]);
-        cv.inRange(hsv, low, high, maskB);
-        low.delete(); high.delete();
-      }
-      cv.bitwise_or(maskA, maskB, mask);
-      maskA.delete(); maskB.delete();
-    }
-    return mask;
-  }
-
-  function cleanMask(mask, kernel){
-    if(MORPH_OPEN){
-      cv.morphologyEx(mask, mask, cv.MORPH_OPEN, kernel);
-    }
-    if(MORPH_CLOSE){
-      cv.morphologyEx(mask, mask, cv.MORPH_CLOSE, kernel);
     }
   }
 
-  function addContoursFromMask(mask, vis, color, thickness, minAreaPx){
-    const contours = new cv.MatVector();
-    const hierarchy = new cv.Mat();
-    cv.findContours(mask, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+  function drawZoneHighlight(rect, zone){
+    if(!zone) return;
+    const z = zone - 1;
+    const row = Math.floor(z / 3);
+    const col = z % 3;
 
-    let kept = 0;
-    for(let i=0;i<contours.size();i++){
-      const cnt = contours.get(i);
-      const area = cv.contourArea(cnt, false);
-      if(area >= minAreaPx){
-        cv.drawContours(vis, contours, i, color, thickness);
-        kept++;
-      }
-      cnt.delete();
+    const x0 = rect.left + col*(rect.width/3);
+    const y0 = rect.top  + row*(rect.height/3);
+    const w = rect.width/3;
+    const h = rect.height/3;
+
+    octx.fillStyle = 'rgba(255,255,255,0.08)';
+    octx.strokeStyle = 'rgba(255,255,255,0.35)';
+    octx.lineWidth = 2;
+    octx.fillRect(x0, y0, w, h);
+    octx.strokeRect(x0, y0, w, h);
+  }
+
+  function drawBox(rect, bbox, style, label){
+    const [x,y,w,h] = bbox;
+    const rx = rect.left + x * rect.scaleX;
+    const ry = rect.top  + y * rect.scaleY;
+    const rw = w * rect.scaleX;
+    const rh = h * rect.scaleY;
+
+    octx.strokeStyle = style.stroke;
+    octx.lineWidth = style.lineWidth;
+    octx.strokeRect(rx, ry, rw, rh);
+
+    if(label){
+      octx.font = '800 12px system-ui';
+      octx.textAlign = 'left';
+      octx.textBaseline = 'top';
+      const pad = 4;
+      const tw = octx.measureText(label).width;
+      octx.fillStyle = style.bg;
+      octx.fillRect(rx, ry, tw + pad*2, 16 + pad);
+      octx.fillStyle = style.fg;
+      octx.fillText(label, rx + pad, ry + 2);
     }
+  }
 
-    contours.delete();
-    hierarchy.delete();
-    return kept;
+  function meanLuma(imageData){
+    const d = imageData.data;
+    let sum = 0;
+    const n = d.length / 4;
+    for(let i=0;i<d.length;i+=4){
+      const r=d[i], g=d[i+1], b=d[i+2];
+      sum += (0.299*r + 0.587*g + 0.114*b);
+    }
+    return n ? (sum / n) : 0;
+  }
+
+  function brightnessLabel(roiMean, bgMean){
+    const diff = roiMean - bgMean;
+    // diff 기반이 제일 직관적 (주변 대비)
+    if(diff > 18) return {label:'밝음', diff};
+    if(diff < -18) return {label:'어두움', diff};
+    return {label:'보통', diff};
+  }
+
+  function computeBrightnessForBox(vw, vh, bbox){
+    // snap 캔버스 크기 설정(가볍게)
+    const targetW = 320;
+    const scale = targetW / Math.max(1, vw);
+    const targetH = Math.max(1, Math.round(vh * scale));
+    if(snap.width !== targetW || snap.height !== targetH){
+      snap.width = targetW;
+      snap.height = targetH;
+    }
+    sctx.drawImage(video, 0, 0, targetW, targetH);
+
+    // bbox -> snap 좌표
+    const [x,y,w,h] = bbox;
+    const sx = clamp(Math.round(x * scale), 0, targetW-1);
+    const sy = clamp(Math.round(y * scale), 0, targetH-1);
+    const sw = clamp(Math.round(w * scale), 1, targetW - sx);
+    const sh = clamp(Math.round(h * scale), 1, targetH - sy);
+
+    // ROI
+    const roi = sctx.getImageData(sx, sy, sw, sh);
+    const roiMean = meanLuma(roi);
+
+    // 주변 배경(확장 박스)
+    const ex = clamp(Math.round(sx - sw*0.18), 0, targetW-1);
+    const ey = clamp(Math.round(sy - sh*0.18), 0, targetH-1);
+    const ew = clamp(Math.round(sw*1.36), 1, targetW - ex);
+    const eh = clamp(Math.round(sh*1.36), 1, targetH - ey);
+
+    const bg = sctx.getImageData(ex, ey, ew, eh);
+    const bgMeanAll = meanLuma(bg);
+
+    // 배경 평균을 “확장영역 평균”으로 쓰면 ROI가 섞이긴 하지만,
+    // 테스트 목적에는 충분히 잘 동작합니다(속도/단순성 우선).
+    // 좀 더 정확하게 하려면 ROI 제외 계산을 추가하면 됩니다.
+    const label = brightnessLabel(roiMean, bgMeanAll);
+
+    return {
+      roiMean, bgMean: bgMeanAll,
+      diff: label.diff,
+      label: label.label
+    };
+  }
+
+  async function loadModel(){
+    try{
+      modelStatus.textContent = 'TF 준비중…';
+      // webgl 우선
+      try{
+        await tf.setBackend('webgl');
+      }catch(_e){}
+      await tf.ready();
+
+      modelStatus.textContent = '모델 로딩중…';
+      // lite_mobilenet_v2: 모바일에서 좀 더 빠름
+      model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+
+      const backend = tf.getBackend ? tf.getBackend() : 'unknown';
+      modelStatus.textContent = `준비완료(${backend})`;
+    }catch(e){
+      console.error(e);
+      modelStatus.textContent = '로딩 실패';
+      debug.textContent = '모델 로딩 오류: ' + e;
+    }
   }
 
   async function detectOnce(){
-    if(!camOn) return;
-    if(typeof cv === 'undefined' || !cv || !cvReady) return;
+    if(!camOn || !model) return;
     if(video.readyState < 2) return;
     if(busy) return;
 
     busy = true;
+    const t0 = performance.now();
     try{
-      // proc 해상도 세팅(영상 비율 유지)
-      const vw = video.videoWidth || 640;
-      const vh = video.videoHeight || 480;
-      const h = Math.max(220, Math.round(PROC_W * (vh / vw)));
-      if(proc.height !== h){
-        proc.height = h;
+      const vw = video.videoWidth || 0;
+      const vh = video.videoHeight || 0;
+      if(vw<=0 || vh<=0) return;
+
+      const minScore = Number(thr.value);
+
+      // detect(video) 결과 bbox는 video 픽셀 좌표 기준
+      const preds = await model.detect(video, 20);
+
+      // sports ball만
+      const balls = preds
+        .filter(p => p && p.class === 'sports ball' && (p.score || 0) >= minScore)
+        .map(p => ({
+          score: p.score || 0,
+          bbox: p.bbox, // [x,y,w,h]
+        }))
+        .sort((a,b)=>b.score-a.score);
+
+      // 렌더
+      resizeOverlay();
+      octx.clearRect(0,0, overlay.width, overlay.height);
+      const rect = getDisplayRect();
+      drawGrid(rect);
+
+      detCount.textContent = balls.length ? `${balls.length}개` : '0개';
+
+      let bestZone = null;
+      let bestLight = null;
+
+      // 여러 개 표시
+      for(let i=0;i<balls.length;i++){
+        const b = balls[i];
+        const [x,y,w,h] = b.bbox;
+        const cx = x + w/2;
+        const cy = y + h/2;
+        const z = zoneFromPoint(cx, cy, vw, vh);
+
+        const isBest = (i===0);
+        const label = `ball ${(b.score*100).toFixed(0)}% · ${z}번`;
+
+        drawBox(rect, b.bbox, {
+          stroke: isBest ? 'rgba(0,255,220,0.95)' : 'rgba(255,255,255,0.65)',
+          lineWidth: isBest ? 3 : 2,
+          bg: isBest ? 'rgba(0,0,0,0.55)' : 'rgba(0,0,0,0.35)',
+          fg: 'rgba(255,255,255,0.95)'
+        }, label);
+
+        if(isBest){
+          bestZone = z;
+          drawZoneHighlight(rect, bestZone);
+
+          // 밝기/그림자 판단
+          bestLight = computeBrightnessForBox(vw, vh, b.bbox);
+
+          // 중심 표시
+          const px = rect.left + cx*rect.scaleX;
+          const py = rect.top  + cy*rect.scaleY;
+          octx.strokeStyle = 'rgba(0,255,220,0.95)';
+          octx.lineWidth = 2;
+          octx.beginPath();
+          octx.moveTo(px-10, py); octx.lineTo(px+10, py);
+          octx.moveTo(px, py-10); octx.lineTo(px, py+10);
+          octx.stroke();
+        }
       }
 
-      // 현재 프레임 축소 복사
-      pctx.drawImage(video, 0, 0, proc.width, proc.height);
-
-      // OpenCV 읽기
-      const src = cv.imread(proc); // RGBA
-      const hsv = new cv.Mat();
-      cv.cvtColor(src, hsv, cv.COLOR_RGBA2HSV);
-
-      // 결과 그릴 투명 캔버스(mat)
-      const vis = new cv.Mat.zeros(hsv.rows, hsv.cols, cv.CV_8UC4);
-
-      // 마스크 정리 커널
-      const k = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(KERNEL_SIZE, KERNEL_SIZE));
-
-      let totalKept = 0;
-      let neutralKept = 0;
-      let colorKeptSum = 0;
-
-      // 1) 무채색(흰/회색/검정 계열) 그룹: S 낮은 영역
-      //    (밝기 그라데이션 허용: Hue는 무시, 채도 낮음만 보되 너무 어두운 건 제외)
-      {
-        const low  = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [0, 0, VAL_MIN, 0]);
-        const high = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [179, SAT_MIN_COLOR, 255, 255]);
-        const neutralMask = new cv.Mat();
-        cv.inRange(hsv, low, high, neutralMask);
-        low.delete(); high.delete();
-
-        cleanMask(neutralMask, k);
-
-        // 무채색은 흰색 외곽선
-        const kept = addContoursFromMask(neutralMask, vis, new cv.Scalar(255,255,255,255), 2, MIN_AREA_PX);
-        neutralKept += kept;
-        totalKept += kept;
-
-        neutralMask.delete();
+      zoneText.textContent = bestZone ? `${bestZone}번` : '—';
+      if(bestLight){
+        lightText.textContent = `${bestLight.label} (Δ${bestLight.diff.toFixed(0)})`;
+      }else{
+        lightText.textContent = '—';
       }
 
-      // 2) 색상 계열 그룹: Hue를 HUE_BINS개로 분할 (S는 충분히 있어야 색으로 봄)
-      const binSize = Math.floor(180 / HUE_BINS);
-      for(let b=0; b<HUE_BINS; b++){
-        const h0 = b * binSize;
-        const h1 = (b === HUE_BINS-1) ? 179 : (h0 + binSize - 1);
-
-        // 색 영역 마스크 만들기
-        const mask = buildHueMask(hsv, h0, h1, SAT_MIN_COLOR+1, VAL_MIN);
-        cleanMask(mask, k);
-
-        // bin별 외곽선 색상(구분용) — 싫으면 흰색으로 바꿔도 됩니다.
-        const rgba = hsvHueColor(b);
-        const color = new cv.Scalar(rgba[0], rgba[1], rgba[2], 255);
-
-        const kept = addContoursFromMask(mask, vis, color, 2, MIN_AREA_PX);
-        colorKeptSum += kept;
-        totalKept += kept;
-
-        mask.delete();
-      }
-
-      // vis를 캔버스로 표시
-      visCanvas.width = vis.cols;
-      visCanvas.height = vis.rows;
-      cv.imshow(visCanvas, vis);
-
-      // cleanup
-      k.delete();
-      vis.delete();
-      hsv.delete();
-      src.delete();
-
-      drawVisToOverlay();
-
-      countText.textContent = totalKept ? `${totalKept}개` : '0개';
-      debugText.textContent =
-        `proc ${proc.width}x${proc.height} / hueBins=${HUE_BINS}\n` +
-        `neutral=${neutralKept}, color=${colorKeptSum}, total=${totalKept}\n` +
-        `SAT_MIN_COLOR=${SAT_MIN_COLOR}, VAL_MIN=${VAL_MIN}, MIN_AREA_PX=${MIN_AREA_PX}`;
+      const t1 = performance.now();
+      debug.textContent =
+        `detect ${(t1-t0).toFixed(0)}ms · period ${period.value}ms · thr ${Number(thr.value).toFixed(2)}\n` +
+        (bestLight
+          ? `ROI 밝기 ${bestLight.roiMean.toFixed(0)} / 주변 ${bestLight.bgMean.toFixed(0)} / Δ${bestLight.diff.toFixed(0)}`
+          : `공(sports ball) 탐지 없음 (공이 작거나 시야에 없거나, 모델이 인식 못할 수 있음)`);
 
     }catch(e){
       console.error(e);
-      debugText.textContent = '오류: ' + e;
+      debug.textContent = '오류: ' + e;
     }finally{
       busy = false;
     }
@@ -408,14 +489,15 @@
 
   function loop(ts){
     if(!camOn){
-      rafId = requestAnimationFrame(loop);
+      requestAnimationFrame(loop);
       return;
     }
-    if((ts - lastTs) >= DETECT_MS){
-      lastTs = ts;
+    const p = Number(period.value);
+    if(ts - lastDetectAt >= p){
+      lastDetectAt = ts;
       detectOnce();
     }
-    rafId = requestAnimationFrame(loop);
+    requestAnimationFrame(loop);
   }
 
   async function startCam(){
@@ -424,8 +506,8 @@
       stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: 'environment' },
-          width: { ideal: 640 },
-          height:{ ideal: 480 },
+          width: { ideal: 1280 },
+          height:{ ideal: 720 },
           frameRate: { ideal: 30, max: 30 }
         },
         audio: false
@@ -438,11 +520,10 @@
       camBtn.textContent = '캠 끄기';
       camBtn.classList.add('off');
 
-      lastTs = 0;
+      lastDetectAt = 0;
       resizeOverlay();
-      drawVisToOverlay();
     }catch(e){
-      setStatus('카메라 실패: ' + e);
+      debug.textContent = '카메라 실패: ' + e;
     }
   }
 
@@ -459,26 +540,23 @@
       camBtn.textContent = '캠 켜기';
       camBtn.classList.remove('off');
 
-      countText.textContent = '—';
-      debugText.textContent = '';
+      detCount.textContent = '—';
+      zoneText.textContent = '—';
+      lightText.textContent = '—';
+      debug.textContent = '';
 
       resizeOverlay();
       octx.clearRect(0,0, overlay.width, overlay.height);
     }catch(_e){}
   }
 
-  camBtn.addEventListener('click', () => {
-    if(camOn) stopCam();
-    else startCam();
-  });
+  camBtn.addEventListener('click', () => camOn ? stopCam() : startCam());
+  window.addEventListener('resize', resizeOverlay);
 
-  window.addEventListener('resize', () => {
-    resizeOverlay();
-    if(camOn) drawVisToOverlay();
-  });
-
+  // 시작: 모델 로딩
+  loadModel();
   resizeOverlay();
-  rafId = requestAnimationFrame(loop);
+  requestAnimationFrame(loop);
 })();
 </script>
 

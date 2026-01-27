@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
-  <title>9분할 동그라미(원) 위치 인식 테스트 v2</title>
+  <title>9분할 동그라미(원) 위치 인식 테스트 v2 (ColorFilter v5)</title>
 
   <style>
     :root{
@@ -126,7 +126,7 @@
 
 <body>
   <header>
-    <div class="title">🎥 9분할 동그라미(원) 위치 인식 테스트 v2</div>
+    <div class="title">🎥 9분할 동그라미(원) 위치 인식 테스트 v2 (ColorFilter v5)</div>
     <div class="spacer"></div>
     <button id="camBtn" class="btn">캠 켜기</button>
     <span class="pill"><span class="muted">상태</span> <span id="statusText">OpenCV 로딩중...</span></span>
@@ -141,8 +141,8 @@
 
     <div class="footer">
       <div class="small">
-        인식 주기: <code>0.5초</code> / 우선순위: <code>완전도(360도) + 방향일치(기울기) + 반지름일관성</code><br/>
-        추가: <code>다색(여러 색) 패턴 후보 원만 제외</code> (밝기 그라데이션은 허용)
+        인식 주기: <code>0.5초</code> / v2 원 검출 유지 + 추가: <code>다색 패턴만 강하게 억제</code><br/>
+        (밝기 그라데이션은 허용: RGB 비율(Chromaticity) 기반)
       </div>
       <div class="small" id="debugText"></div>
     </div>
@@ -164,17 +164,14 @@
   let stream = null;
   let camOn = false;
 
-  // 처리용 캔버스(축소)
   const proc = document.createElement('canvas');
   const pctx = proc.getContext('2d', { willReadFrequently:true });
   let procW = 360, procH = 240;
 
-  // 흔들림 완화(2회 연속 같은 존이면 확정)
   let stableZone = null;
   let pendingZone = null;
   let pendingCount = 0;
 
-  // 마지막 원(약한 힌트)
   let lastCircle = null; // {x,y,r}
 
   let busy = false;
@@ -218,7 +215,6 @@
     w = Math.max(300, w);
     h = Math.max(220, h);
 
-    // 3의 배수로
     w = w - (w % 3);
     h = h - (h % 3);
 
@@ -243,7 +239,6 @@
   function drawGridAndNumbers(rect){
     const x0 = rect.left, y0 = rect.top, w = rect.width, h = rect.height;
 
-    // lines
     octx.strokeStyle = 'rgba(255,255,255,0.9)';
     octx.lineWidth = 1;
     octx.beginPath();
@@ -253,7 +248,6 @@
     octx.moveTo(x0, y0 + 2*h/3);    octx.lineTo(x0 + w, y0 + 2*h/3);
     octx.stroke();
 
-    // numbers
     octx.font = '900 16px system-ui';
     octx.textAlign = 'center';
     octx.textBaseline = 'middle';
@@ -332,23 +326,21 @@
     debugText.textContent = debugLine || '';
   }
 
-  // ---- 원 둘레 샘플링 기반 점수 (완벽한 원 우선) ----
+  // ---- v2 링 점수 (원형도/방향일치/반지름일관성) ----
   function scoreCircleByRing(gx, gy, mag, blurGray, x, y, r, magThr){
     const w = mag.cols, h = mag.rows;
     const gxD = gx.data32F, gyD = gy.data32F, mD = mag.data32F;
-    const gD  = blurGray.data; // uint8
+    const gD  = blurGray.data;
 
     const N = 96;
-    const band = 2; // r±2px 범위에서 최대 기울기 찾기
+    const band = 2;
 
     let hits = 0;
     let alignSum = 0;
 
-    // 반지름 일관성 계산용
     let radSum = 0;
     let radSum2 = 0;
 
-    // inside / outside contrast(약하게)
     const innerR = Math.max(2, r*0.70);
     const outerR = r*1.15;
 
@@ -358,7 +350,6 @@
       const a = (i / N) * Math.PI * 2;
       const ux = Math.cos(a), uy = Math.sin(a);
 
-      // ring에서 가장 강한 기울기 위치 찾기
       let bestM = 0;
       let bestPx = -1, bestPy = -1;
       let bestRR = r;
@@ -377,7 +368,6 @@
         }
       }
 
-      // 내부/외부 샘플
       {
         const ix = Math.round(x + innerR * ux);
         const iy = Math.round(y + innerR * uy);
@@ -399,19 +389,19 @@
       const gxx = gxD[bestPy*w + bestPx];
       const gyy = gyD[bestPy*w + bestPx];
       const gn = Math.hypot(gxx, gyy) || 1e-6;
-      const dot = (gxx*ux + gyy*uy) / gn; // -1..1
+      const dot = (gxx*ux + gyy*uy) / gn;
       alignSum += Math.abs(dot);
     }
 
     const hitRatio = hits / N;
-    if(hitRatio < 0.33) return null;
+    if(hitRatio < 0.28) return null; // v2(0.33)보다 약간 완화
 
     const alignAvg = alignSum / Math.max(1, hits);
 
     const radMean = radSum / Math.max(1, hits);
     const radVar = (radSum2 / Math.max(1, hits)) - radMean*radMean;
     const radStd = Math.sqrt(Math.max(0, radVar));
-    const consScore = clamp(1 - (radStd / Math.max(1, r*0.10)), 0, 1);
+    const consScore = clamp(1 - (radStd / Math.max(1, r*0.12)), 0, 1);
 
     let contrastScore = 0;
     let brightBonus = 0;
@@ -423,7 +413,7 @@
       brightBonus = clamp((diff - 6) / 70, 0, 1);
     }
 
-    const alignScore = clamp((alignAvg - 0.45) / 0.55, 0, 1);
+    const alignScore = clamp((alignAvg - 0.42) / 0.58, 0, 1); // v2(0.45)보다 약간 완화
 
     let score =
       0.52*hitRatio +
@@ -465,37 +455,35 @@
   }
 
   /* =========================================================
-     ✅ 추가: "다색(여러 색) 패턴"만 걸러내는 색 필터
-     - 밝기(L) 변화(그라데이션)는 허용
-     - Lab의 a,b(색 성분) 분산/다양성만 검사
+     ✅ 다색 패턴 필터 (OpenCV 색변환 없이 RGBA에서 직접)
+     - 밝기 그라데이션은 허용
+     - RGB 비율(Chromaticity) 변동이 크면 "다색"으로 판단
      ========================================================= */
 
   const COLOR_FILTER = {
     enabled: true,
+    bins: 8,                 // chroma bin grid (8x8 = 64)
+    minSumRGB: 25,           // 너무 어두운 픽셀 제외(노이즈)
+    minSamples: 40,
 
-    // inner(원 내부)에서 색이 너무 다양하면(다색 패턴) 제거
-    // (A,B를 4bit(16단계)로 양자화했을 때의 "서로 다른 색 bin" 개수)
-    maxUniqueBins: 16,
+    // "강하게 다색"일 때만 reject (이게 핵심: 공이 안 막히게)
+    strongRejectUniqueBins: 26,
+    strongRejectChromaStd:  0.11,
 
-    // a,b 표준편차(색 변화)가 너무 크면 다색 가능성 ↑
-    maxChromaStd: 32,
+    // 약한 페널티/보너스 계산용(여긴 통과/탈락이 아니라 점수 조정)
+    softUniqueRef: 18,
+    softStdRef:    0.085,
 
-    // a,b 범위가 너무 넓으면(두세 가지 색이 섞임) 다색 가능성 ↑
-    maxChromaRange: 80,
-
-    // 안쪽 vs 원 내부 테두리(a,b)가 너무 다르면(경계에 다른 색 섞임) 제거
-    maxInnerEdgeDeltaAB: 28,
-
-    // 샘플이 너무 적으면(가장자리 등) 필터를 강제 적용하지 않음
-    minSamples: 40
+    // 내부 vs 내부테두리 색비율 차이가 너무 크면 패턴/혼합 가능성
+    maxInnerEdgeDelta: 0.14
   };
 
-  function sampleLabABStats(labData, w, h, cx, cy, radii, angles){
-    let sumA=0, sumB=0, sumA2=0, sumB2=0, cnt=0;
-    let minA=255, maxA=0, minB=255, maxB=0;
+  function sampleChromaStatsRGBA(rgba, w, h, cx, cy, radii, angles){
+    const bins = COLOR_FILTER.bins;
+    const seen = new Uint8Array(bins*bins);
+    let unique = 0;
 
-    // 16x16 양자화 bin(256개) -> unique count
-    const seen = new Uint8Array(256);
+    let sumCr=0, sumCg=0, sumCr2=0, sumCg2=0, cnt=0;
 
     const TWO_PI = Math.PI*2;
     for(let ri=0; ri<radii.length; ri++){
@@ -506,90 +494,92 @@
         const py = Math.round(cy + rr*Math.sin(a));
         if(px<0||py<0||px>=w||py>=h) continue;
 
-        const idx = (py*w + px)*3;
-        const A = labData[idx+1];
-        const B = labData[idx+2];
+        const idx = (py*w + px) * 4;
+        const r = rgba[idx];
+        const g = rgba[idx+1];
+        const b = rgba[idx+2];
 
-        sumA += A; sumB += B;
-        sumA2 += A*A; sumB2 += B*B;
-        if(A<minA) minA=A; if(A>maxA) maxA=A;
-        if(B<minB) minB=B; if(B>maxB) maxB=B;
+        const s = r + g + b;
+        if(s < COLOR_FILTER.minSumRGB) continue;
 
-        const bin = ((A>>4)<<4) | (B>>4);
-        seen[bin] = 1;
+        const cr = r / s;
+        const cg = g / s;
 
+        sumCr += cr; sumCg += cg;
+        sumCr2 += cr*cr; sumCg2 += cg*cg;
         cnt++;
+
+        const br = Math.min(bins-1, Math.max(0, (cr*bins) | 0));
+        const bg = Math.min(bins-1, Math.max(0, (cg*bins) | 0));
+        const key = br*bins + bg;
+        if(seen[key] === 0){
+          seen[key] = 1;
+          unique++;
+        }
       }
     }
 
     if(cnt <= 0) return null;
 
-    let uniqueBins = 0;
-    for(let i=0;i<256;i++) if(seen[i]) uniqueBins++;
+    const meanCr = sumCr/cnt;
+    const meanCg = sumCg/cnt;
+    const varCr = sumCr2/cnt - meanCr*meanCr;
+    const varCg = sumCg2/cnt - meanCg*meanCg;
+    const stdCr = Math.sqrt(Math.max(0,varCr));
+    const stdCg = Math.sqrt(Math.max(0,varCg));
+    const chromaStd = Math.sqrt(stdCr*stdCr + stdCg*stdCg);
 
-    const meanA = sumA/cnt, meanB = sumB/cnt;
-    const varA = sumA2/cnt - meanA*meanA;
-    const varB = sumB2/cnt - meanB*meanB;
-    const stdA = Math.sqrt(Math.max(0,varA));
-    const stdB = Math.sqrt(Math.max(0,varB));
-
-    return {
-      cnt,
-      meanA, meanB,
-      stdA, stdB,
-      minA, maxA, minB, maxB,
-      uniqueBins
-    };
+    return {cnt, meanCr, meanCg, stdCr, stdCg, chromaStd, uniqueBins: unique};
   }
 
-  function passMultiColorPatternFilter(labData, w, h, x, y, r){
-    if(!COLOR_FILTER.enabled) return {pass:true, note:'off'};
+  function colorFilterForCircle(rgba, w, h, x, y, r){
+    if(!COLOR_FILTER.enabled) return {reject:false, boost:0, note:'off'};
 
-    // 너무 작은 원은 샘플이 불안정 -> 통과(원 검출 점수에 맡김)
-    if(r < 12) return {pass:true, note:'small'};
+    if(r < 12) return {reject:false, boost:0.00, note:'small'};
 
     const innerR = Math.max(2, r*0.60);
-    const innerRadii = [r*0.15, r*0.30, r*0.45, innerR];
+    const inner = sampleChromaStatsRGBA(rgba, w, h, x, y, [r*0.15, r*0.30, r*0.45, innerR], 24);
 
-    // 원 내부 테두리(바깥 경계 바로 안쪽) — 밝기 변화는 무시, a/b만 비교
-    const edgeRadii = [r*0.80, r*0.88, r*0.94];
+    const edge = sampleChromaStatsRGBA(rgba, w, h, x, y, [r*0.82, r*0.90, r*0.95], 24);
 
-    const inner = sampleLabABStats(labData, w, h, x, y, innerRadii, 24);
-    const edge  = sampleLabABStats(labData, w, h, x, y, edgeRadii, 24);
+    if(!inner || !edge) return {reject:false, boost:0, note:'no-sample'};
 
-    if(!inner || !edge) return {pass:true, note:'no-sample'};
-
-    // 샘플이 부족하면(가장자리 등) 너무 엄격하게 걸지 않음
     if(inner.cnt < COLOR_FILTER.minSamples){
-      return {pass:true, note:'few-samples', inner, edge};
+      return {reject:false, boost:0.0, note:'few-samples', inner, edge};
     }
 
-    const chromaStd = Math.hypot(inner.stdA, inner.stdB);
-    const rangeA = inner.maxA - inner.minA;
-    const rangeB = inner.maxB - inner.minB;
-    const chromaRange = Math.max(rangeA, rangeB);
+    const delta = Math.hypot(inner.meanCr - edge.meanCr, inner.meanCg - edge.meanCg);
 
-    const deltaAB = Math.hypot(inner.meanA - edge.meanA, inner.meanB - edge.meanB);
+    // ✅ “강하게 다색”일 때만 reject (공이 안 막히도록)
+    const strongReject =
+      (inner.uniqueBins >= COLOR_FILTER.strongRejectUniqueBins) &&
+      (inner.chromaStd  >= COLOR_FILTER.strongRejectChromaStd);
 
-    // "다색 패턴" 판정(엄격하게 하지 않고, 다색일 때만 확실히 거름)
-    const tooManyBins = inner.uniqueBins > COLOR_FILTER.maxUniqueBins;
-    const tooWide = chromaRange > COLOR_FILTER.maxChromaRange;
-    const tooNoisy = chromaStd > COLOR_FILTER.maxChromaStd;
+    // 경계 혼합이 심하고, 동시에 색 다양성이 크면 reject
+    const edgeMixReject =
+      (delta > COLOR_FILTER.maxInnerEdgeDelta) &&
+      (inner.uniqueBins >= COLOR_FILTER.strongRejectUniqueBins);
 
-    // 다색일 가능성이 높을 때만 reject (그라데이션 L 변화는 여기서 보지 않음)
-    const multiColorPattern = tooManyBins && (tooWide || tooNoisy);
-
-    if(multiColorPattern){
-      return {pass:false, reason:'multi-color-pattern', inner, edge, chromaStd, chromaRange, deltaAB};
+    if(strongReject || edgeMixReject){
+      return {
+        reject:true,
+        boost:0,
+        note: strongReject ? 'reject:multi-color' : 'reject:edge-mix',
+        inner, edge, delta
+      };
     }
 
-    // “안쪽과 원 내부 테두리”가 다른 색이면(다른 물체/무늬가 섞인 후보) reject
-    // (이것도 L이 아니라 AB만 비교 -> 밝기 그라데이션은 통과)
-    if(deltaAB > COLOR_FILTER.maxInnerEdgeDeltaAB && (tooManyBins || tooWide)){
-      return {pass:false, reason:'inner-edge-mismatch', inner, edge, chromaStd, chromaRange, deltaAB};
-    }
+    // ✅ 통과한 후보 중에서 “단색에 가까울수록” 약간 점수 보너스
+    const uScore = clamp(1 - (inner.uniqueBins / COLOR_FILTER.softUniqueRef), 0, 1);
+    const sScore = clamp(1 - (inner.chromaStd  / COLOR_FILTER.softStdRef),   0, 1);
+    const dScore = clamp(1 - (delta / COLOR_FILTER.maxInnerEdgeDelta),       0, 1);
 
-    return {pass:true, reason:'ok', inner, edge, chromaStd, chromaRange, deltaAB};
+    const uniformScore = 0.45*uScore + 0.45*sScore + 0.10*dScore;
+
+    // 보너스는 너무 크면 오검출 고착 → 최대 +0.06 정도만
+    const boost = 0.06 * uniformScore;
+
+    return {reject:false, boost, note:'ok', inner, edge, delta, uniformScore};
   }
 
   async function detectOnce(){
@@ -603,12 +593,8 @@
       ensureProcSize();
       pctx.drawImage(video, 0, 0, procW, procH);
 
-      const src = cv.imread(proc);                 // RGBA
-
-      // ✅ 추가: Lab (다색 패턴 필터용)
-      const lab = new cv.Mat();
-      cv.cvtColor(src, lab, cv.COLOR_RGBA2Lab);
-      const labData = lab.data; // Uint8Array (3채널)
+      const src = cv.imread(proc); // RGBA
+      const rgba = src.data;       // ✅ 색 필터는 여기서 직접 사용(색변환 없음)
 
       const gray = new cv.Mat();
       cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
@@ -616,28 +602,26 @@
       const blur = new cv.Mat();
       cv.medianBlur(gray, blur, 5);
 
-      // edges (원본 유지: 사용하진 않지만 제거하지 않음)
-      const edges = new cv.Mat();
-      cv.Canny(blur, edges, 70, 150);
-
       // gradients
       const gx = new cv.Mat(), gy = new cv.Mat(), mag = new cv.Mat();
       cv.Sobel(blur, gx, cv.CV_32F, 1, 0, 3);
       cv.Sobel(blur, gy, cv.CV_32F, 0, 1, 3);
       cv.magnitude(gx, gy, mag);
 
-      // mag threshold(자동)
+      // mag threshold: v2보다 약간 관대하게 (공 경계가 약해도 잡히게)
       const mean = new cv.Mat(), std = new cv.Mat();
       cv.meanStdDev(mag, mean, std);
       const mMean = mean.data64F[0] || 0;
       const mStd  = std.data64F[0]  || 0;
       mean.delete(); std.delete();
 
-      const magThr = clamp(mMean + mStd*0.65, 12, 80);
+      const magThr = clamp(mMean + mStd*0.45, 8, 60);
 
-      // HoughCircles: strict + loose
+      // HoughCircles: v2 유지 + 후보 더 확보(하나 더)
       const circles1 = new cv.Mat();
       const circles2 = new cv.Mat();
+      const circles3 = new cv.Mat();
+
       const minDim = Math.min(procW, procH);
       const minR = Math.max(10, Math.round(minDim * 0.03));
       const maxR = Math.round(minDim * 0.48);
@@ -645,18 +629,24 @@
 
       cv.HoughCircles(blur, circles1, cv.HOUGH_GRADIENT, 1.2, minDist, 100, 40, minR, maxR);
       cv.HoughCircles(blur, circles2, cv.HOUGH_GRADIENT, 1.2, minDist, 100, 30, minR, maxR);
+      // ✅ 더 느슨하게 후보 확보(점수로 거름)
+      cv.HoughCircles(blur, circles3, cv.HOUGH_GRADIENT, 1.1, minDist, 90,  24, minR, maxR);
 
       const cand = [];
       mergeCircleList(cand, circles1);
       mergeCircleList(cand, circles2);
+      mergeCircleList(cand, circles3);
 
-      // 1) 먼저 원 점수(기존 방식)로 후보를 정렬
-      const scored = [];
+      let best = null;              // 색필터 적용 후 best
+      let bestIgnoreColor = null;   // 색필터 무시 시 best(보험)
+      let bestCf = null;
+      let usedFallback = false;
+
       for(const c of cand){
         const s = scoreCircleByRing(gx, gy, mag, blur, c.x, c.y, c.r, magThr);
         if(!s) continue;
 
-        // 이전 위치 힌트(아주 약하게만)
+        // 이전 위치 힌트(약하게)
         let bonusNear = 0;
         if(lastCircle){
           const dx = c.x - lastCircle.x;
@@ -666,52 +656,49 @@
           bonusNear = 0.02 * near;
         }
 
-        scored.push({
-          x:c.x, y:c.y, r:c.r,
-          baseScore: s.score + bonusNear,
-          s
-        });
-      }
+        const baseScore = s.score + bonusNear;
 
-      scored.sort((a,b)=>b.baseScore - a.baseScore);
+        if(!bestIgnoreColor || baseScore > bestIgnoreColor.score){
+          bestIgnoreColor = {
+            x:c.x, y:c.y, r:c.r,
+            score: baseScore,
+            baseScore,
+            s, cf:null
+          };
+        }
 
-      // 2) 상위 후보에만 “다색 패턴 필터” 적용(속도 유지)
-      const TOPK = 12;
-      let best = null;
-      let bestAny = scored.length ? scored[0] : null;
-      let bestCf = null;
+        const cf = colorFilterForCircle(rgba, procW, procH, c.x, c.y, c.r);
+        if(cf.reject) continue; // ✅ 강하게 다색일 때만 reject
 
-      for(let i=0; i<Math.min(TOPK, scored.length); i++){
-        const it = scored[i];
+        const finalScore = baseScore + cf.boost;
 
-        const cf = passMultiColorPatternFilter(labData, procW, procH, it.x, it.y, it.r);
-        if(!cf.pass) continue;
-
-        // 통과 후보 중 baseScore가 가장 큰 것을 선택
-        if(!best || it.baseScore > best.baseScore){
-          best = it;
+        if(!best || finalScore > best.score){
+          best = {
+            x:c.x, y:c.y, r:c.r,
+            score: finalScore,
+            baseScore,
+            s, cf
+          };
           bestCf = cf;
         }
       }
 
-      // 필터 통과 후보가 하나도 없으면, 기존 v2처럼(필터 없이) 최고 점수 후보를 사용 (공 검출 유지)
-      // 단, debug에 “필터 통과 없음” 표기
-      let usedFallback = false;
-      if(!best && bestAny){
-        best = bestAny;
+      // cleanup
+      src.delete(); gray.delete(); blur.delete();
+      gx.delete(); gy.delete(); mag.delete();
+      circles1.delete(); circles2.delete(); circles3.delete();
+
+      // 색필터 때문에 best가 하나도 없으면(또는 후보가 거의 없으면) v2 방식으로 fallback
+      if(!best && bestIgnoreColor){
+        best = bestIgnoreColor;
         usedFallback = true;
       }
 
-      // cleanup
-      src.delete(); lab.delete();
-      gray.delete(); blur.delete(); edges.delete();
-      gx.delete(); gy.delete(); mag.delete();
-      circles1.delete(); circles2.delete();
-
-      if(!best || best.baseScore < 0.36){
+      // ✅ “아예 표시 안 함” 임계값을 조금 낮춤(공 경계가 약한 환경 대응)
+      if(!best || best.score < 0.32){
         lastCircle = null;
         pendingZone = null; pendingCount = 0;
-        render(null, null, '원 후보가 있으나 점수가 낮아 표시 안 함');
+        render(null, null, cand.length ? '원 후보가 있으나 점수가 낮아 표시 안 함' : 'Hough 원 후보 없음');
         return;
       }
 
@@ -738,22 +725,16 @@
 
       const s = best.s;
       let dbg =
-        `score ${(best.baseScore*100).toFixed(1)}% · 완전도 ${(s.hitRatio*100).toFixed(0)}% · ` +
-        `방향 ${(s.alignAvg*100).toFixed(0)}% · 일관 ${(s.consScore*100).toFixed(0)}%` +
+        `cand ${cand.length} · score ${(best.score*100).toFixed(1)}% (base ${(best.baseScore*100).toFixed(1)}%) · ` +
+        `완전도 ${(s.hitRatio*100).toFixed(0)}% · 방향 ${(s.alignAvg*100).toFixed(0)}% · 일관 ${(s.consScore*100).toFixed(0)}%` +
         (s.brightBonus>0 ? ` · 밝기보너스 ${(s.brightBonus*100).toFixed(0)}%` : '');
 
-      // 색 필터 디버그(다색 패턴 여부 확인용)
       if(COLOR_FILTER.enabled){
         if(usedFallback){
-          dbg += ' · CF: 통과 후보 없음(기존 점수로 표시)';
-        }else if(bestCf){
-          const bins = bestCf.inner?.uniqueBins;
-          const std = bestCf.chromaStd;
-          const rng = bestCf.chromaRange;
-          const dAB = bestCf.deltaAB;
-          dbg += ` · CF ok (bins ${bins ?? '-'}, std ${std?.toFixed?.(1) ?? '-'}, range ${rng?.toFixed?.(1) ?? '-'}, dAB ${dAB?.toFixed?.(1) ?? '-'})`;
-        }else{
-          dbg += ' · CF: ok';
+          dbg += ` · CF fallback(색필터로 통과 후보 없음)`;
+        }else if(best.cf){
+          const inn = best.cf.inner;
+          dbg += ` · CF ok (bins ${inn?.uniqueBins ?? '-'}, std ${inn?.chromaStd?.toFixed?.(3) ?? '-'}, Δ ${best.cf.delta?.toFixed?.(3) ?? '-'}, +${(best.cf.boost*100).toFixed(1)}%)`;
         }
       }
 

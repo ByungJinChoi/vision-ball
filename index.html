@@ -280,7 +280,7 @@
   #camVideo{
     width:100%;
     height:100%;
-    object-fit:contain; /* ★ 9분할 라인과 실제 영상 정렬을 위해 contain */
+    object-fit:contain; /* 라인과 영상 정렬 */
     transform: scaleX(-1);
     background:#000;
   }
@@ -308,10 +308,9 @@
   #ovFocusBox{ display:none !important; }
 
   /* ===== 9분할(3x3) 라인 오버레이 ===== */
-  /* 필요 시 숨기려면 아래 .gridOverlay { opacity: 0; } 로 바꾸면 됩니다. */
+  /* 숨기려면 opacity:0 으로 변경 */
   .gridOverlay{
     position:absolute;
-    /* left/top/width/height 는 JS에서 “실제 영상 표시 영역”으로 맞춥니다 */
     left:0; top:0; width:100%; height:100%;
     pointer-events:none;
     z-index:2;
@@ -897,7 +896,6 @@ var LED_MODE=[["밝기","BRIGHT"],["숨쉬기","BREATHE"]];
 var LED_VALS=Array.from({length:20},(_,i)=>[String(i),String(i)]);
 
 /* ================= 블록 정의 ================= */
-/* ★ 이벤트 블록(9분할) 옵션 ★ */
 const DIGIT_OPTIONS = [
   ["멀리 왼쪽","B_FAR_LEFT"],
   ["멀리 있음","B_FAR"],
@@ -1552,8 +1550,8 @@ const gridOverlayOverlay = document.getElementById('gridOverlayOverlay');
 /* 공용 파라미터 */
 const LOW_W = 64, LOW_H = 48;
 
-/* 공 인식 캔버스 */
-const OCR_W = 240, OCR_H = 180;
+/* 공 인식 캔버스 (작은 공 개선: 해상도 상승) */
+const OCR_W = 320, OCR_H = 240;
 /* 1초 간격 */
 const DETECT_PERIOD_MS = 1000;
 /* 이벤트 실행 최소 신뢰도(%) */
@@ -1597,7 +1595,6 @@ function syncGridOverlayToVideo(videoEl, wrapEl, gridEl){
     const wh = wrapEl.clientHeight || 0;
     if(vw<=0 || vh<=0 || ww<=0 || wh<=0) return;
 
-    // object-fit: contain 기준
     const s = Math.min(ww / vw, wh / vh);
     const dw = vw * s;
     const dh = vh * s;
@@ -1716,41 +1713,61 @@ function otsuThreshold(hist, total){
 
 function clamp01(v){ return Math.max(0, Math.min(1, v)); }
 
-/* saliency 기반 마스크: 색상 무관(밝기 변화 + 컬러차이(diff)) */
+/* saliency 기반 마스크: 색상 무관 + (개선) 경계(gradient) 성분 추가 */
 function buildCircleMask(img, w, h){
   const d = img.data;
   const n = w*h;
 
+  // 1) grayscale + mean
+  const yArr = new Uint8Array(n);
   let sumY = 0;
   for(let i=0,p=0;i<n;i++,p+=4){
     const r=d[p], g=d[p+1], b=d[p+2];
-    const y = (r*0.299 + g*0.587 + b*0.114);
+    const y = (r*0.299 + g*0.587 + b*0.114) | 0;
+    yArr[i] = y;
     sumY += y;
   }
   const meanY = sumY / Math.max(1,n);
 
+  // 2) saliency + histogram
   const sal = new Uint8Array(n);
   const hist = new Uint32Array(256);
 
-  for(let i=0,p=0;i<n;i++,p+=4){
-    const r=d[p], g=d[p+1], b=d[p+2];
-    const mx = (r>g? (r>b?r:b) : (g>b?g:b));
-    const mn = (r<g? (r<b?r:b) : (g<b?g:b));
-    const diff = mx - mn;
+  for(let y=0;y<h;y++){
+    for(let x=0;x<w;x++){
+      const i = y*w + x;
+      const p = i*4;
 
-    const y = (r*0.299 + g*0.587 + b*0.114);
-    const dy = Math.abs(y - meanY);
+      const r=d[p], g=d[p+1], b=d[p+2];
+      const mx = (r>g? (r>b?r:b) : (g>b?g:b));
+      const mn = (r<g? (r<b?r:b) : (g<b?g:b));
+      const diff = mx - mn;
 
-    let s = dy;
-    if(diff > s) s = diff;
+      const yy = yArr[i];
+      const dy = Math.abs(yy - meanY);
 
-    let si = s|0;
-    if(si<0) si=0; else if(si>255) si=255;
+      // (개선) 간단 gradient (경계)
+      let grad = 0;
+      if(x>0 && x<w-1 && y>0 && y<h-1){
+        const gx = (yArr[i+1] - yArr[i-1]);
+        const gy = (yArr[i+w] - yArr[i-w]);
+        grad = Math.abs(gx) + Math.abs(gy);
+        if(grad > 255) grad = 255;
+      }
+      const gScore = grad * 0.60; // 너무 강하면 배경 엣지에 묻힘 → 가중치 절제
 
-    sal[i]=si;
-    hist[si]++;
+      let s = dy;
+      if(diff > s) s = diff;
+      if(gScore > s) s = gScore;
+
+      let si = s|0;
+      if(si<0) si=0; else if(si>255) si=255;
+      sal[i]=si;
+      hist[si]++;
+    }
   }
 
+  // 3) threshold
   let thr = otsuThreshold(hist, n);
   thr = Math.max(18, thr);
 
@@ -1762,6 +1779,7 @@ function buildCircleMask(img, w, h){
     }
   }
 
+  // 너무 많이 잡히면 기준을 올림 (복잡 배경 억제)
   if(cnt > n * 0.40){
     thr = Math.min(255, thr + 18);
     cnt = 0;
@@ -1773,7 +1791,7 @@ function buildCircleMask(img, w, h){
     }
   }
 
-  // 1회 dilation
+  // 4) dilation (1회)
   const dil = new Uint8Array(n);
   for(let y=0;y<h;y++){
     for(let x=0;x<w;x++){
@@ -1788,7 +1806,7 @@ function buildCircleMask(img, w, h){
     }
   }
 
-  // 간단 노이즈 제거
+  // 5) 간단 노이즈 제거
   const out = dil.slice();
   for(let y=1;y<h-1;y++){
     for(let x=1;x<w-1;x++){
@@ -1806,106 +1824,234 @@ function buildCircleMask(img, w, h){
   return out;
 }
 
-/* 연결요소 분석 → 가장 원형에 가까운 후보 선택 (반원도 단독이면 OK) */
+/* 연결요소 분석 → (개선) 원형도(circularity) 강화 + (개선) 작은 공 2-pass + (개선) 가장자리 보정 */
 function analyzeCandidates(mask, w, h){
   const n = w*h;
-  const visited = new Uint8Array(n);
-  const cand = [];
-
   const frameArea = n;
-  const MIN_AREA = Math.max(60, Math.floor(frameArea * 0.0012));
   const MAX_AREA = Math.floor(frameArea * 0.55);
 
-  const stack = [];
+  const passes = [
+    // pass0: 기본 탐색
+    {
+      minArea: Math.max(42, Math.floor(frameArea * 0.00095)),
+      minDim: 8,
+      minFill: 0.12,
+      minFillEdge: 0.07,
+      aspectLimit: 3.2,
+      aspectLimitEdge: 4.2,
+      minCirc: 0.18,
+      minCircEdge: 0.14,
+      circLo: 0.14,
+      circLoEdge: 0.10,
+      circHi: 0.92
+    },
+    // pass1: 작은 공(멀리) 탐색 — minArea 낮추되 원형도 조건 조금 강화
+    {
+      minArea: Math.max(18, Math.floor(frameArea * 0.00035)),
+      minDim: 6,
+      minFill: 0.10,
+      minFillEdge: 0.06,
+      aspectLimit: 3.6,
+      aspectLimitEdge: 4.6,
+      minCirc: 0.24,
+      minCircEdge: 0.18,
+      circLo: 0.16,
+      circLoEdge: 0.12,
+      circHi: 0.92
+    }
+  ];
 
-  for(let i=0;i<n;i++){
-    if(!mask[i] || visited[i]) continue;
+  function runPass(pcfg){
+    const visited = new Uint8Array(n);
+    const stack = [];
+    const cand = [];
 
-    let area=0, sumX=0, sumY=0;
-    let minX=1e9, minY=1e9, maxX=-1e9, maxY=-1e9;
-    let touchesEdge=false;
+    for(let i=0;i<n;i++){
+      if(!mask[i] || visited[i]) continue;
 
-    stack.length=0;
-    stack.push(i);
-    visited[i]=1;
+      let area=0, sumX=0, sumY=0;
+      let minX=1e9, minY=1e9, maxX=-1e9, maxY=-1e9;
+      let touchesEdge=false;
+      let perimeter=0; // (개선) boundary edge count 기반 perimeter
 
-    while(stack.length){
-      const idx = stack.pop();
-      const x = idx % w;
-      const y = (idx / w) | 0;
+      stack.length=0;
+      stack.push(i);
+      visited[i]=1;
 
-      area++;
-      sumX += x;
-      sumY += y;
+      while(stack.length){
+        const idx = stack.pop();
+        const x = idx % w;
+        const y = (idx / w) | 0;
 
-      if(x<minX) minX=x;
-      if(y<minY) minY=y;
-      if(x>maxX) maxX=x;
-      if(y>maxY) maxY=y;
+        area++;
+        sumX += x;
+        sumY += y;
 
-      if(x===0 || y===0 || x===w-1 || y===h-1) touchesEdge=true;
+        if(x<minX) minX=x;
+        if(y<minY) minY=y;
+        if(x>maxX) maxX=x;
+        if(y>maxY) maxY=y;
 
-      const up = idx - w;
-      const dn = idx + w;
-      const lf = idx - 1;
-      const rt = idx + 1;
+        if(x===0 || y===0 || x===w-1 || y===h-1) touchesEdge=true;
 
-      if(y>0 && mask[up] && !visited[up]){ visited[up]=1; stack.push(up); }
-      if(y<h-1 && mask[dn] && !visited[dn]){ visited[dn]=1; stack.push(dn); }
-      if(x>0 && mask[lf] && !visited[lf]){ visited[lf]=1; stack.push(lf); }
-      if(x<w-1 && mask[rt] && !visited[rt]){ visited[rt]=1; stack.push(rt); }
+        // up
+        if(y===0 || !mask[idx-w]){
+          perimeter++;
+        }else{
+          const up = idx-w;
+          if(!visited[up]){ visited[up]=1; stack.push(up); }
+        }
+        // down
+        if(y===h-1 || !mask[idx+w]){
+          perimeter++;
+        }else{
+          const dn = idx+w;
+          if(!visited[dn]){ visited[dn]=1; stack.push(dn); }
+        }
+        // left
+        if(x===0 || !mask[idx-1]){
+          perimeter++;
+        }else{
+          const lf = idx-1;
+          if(!visited[lf]){ visited[lf]=1; stack.push(lf); }
+        }
+        // right
+        if(x===w-1 || !mask[idx+1]){
+          perimeter++;
+        }else{
+          const rt = idx+1;
+          if(!visited[rt]){ visited[rt]=1; stack.push(rt); }
+        }
+      }
+
+      if(area < pcfg.minArea || area > MAX_AREA) continue;
+
+      const bw = (maxX - minX + 1);
+      const bh = (maxY - minY + 1);
+      const minDim = pcfg.minDim;
+      if(bw < minDim || bh < minDim) continue;
+
+      const aspect = bw / Math.max(1, bh);
+      const aspectLim = touchesEdge ? pcfg.aspectLimitEdge : pcfg.aspectLimit;
+      if(aspect > aspectLim || aspect < 1/aspectLim) continue;
+
+      const fill = area / (bw * bh);
+
+      const minFill = touchesEdge ? pcfg.minFillEdge : pcfg.minFill;
+      if(fill < minFill || fill > 0.98) continue;
+
+      if(perimeter < 8) continue;
+
+      // (개선) circularity
+      let circularity = (4 * Math.PI * area) / (perimeter * perimeter);
+      if(!isFinite(circularity) || circularity < 0) circularity = 0;
+      if(circularity > 1.2) circularity = 1.2;
+
+      const minCirc = touchesEdge ? pcfg.minCircEdge : pcfg.minCirc;
+      if(circularity < minCirc) continue;
+
+      // fill scores (원/반원)
+      const fillScoreFull = clamp01(1 - (Math.abs(fill - 0.785) / 0.785));
+      const fillScoreHalf = clamp01(1 - (Math.abs(fill - 0.392) / 0.392));
+      const fillScore = touchesEdge
+        ? Math.max(fillScoreHalf, fillScoreFull * 0.85)
+        : Math.max(fillScoreFull, fillScoreHalf * 0.70);
+
+      // aspect score
+      const aspectDen = touchesEdge ? 1.60 : 1.20;
+      const aspectScore = clamp01(1 - (Math.abs(aspect - 1) / aspectDen));
+
+      // circularity score (강하게)
+      const cLo = touchesEdge ? pcfg.circLoEdge : pcfg.circLo;
+      const cHi = pcfg.circHi;
+      const circScore = clamp01((circularity - cLo) / Math.max(1e-6, (cHi - cLo)));
+
+      // (개선) shapeScore에서 원형도 비중 강화
+      let shapeScore = touchesEdge
+        ? (0.45*circScore + 0.30*fillScore + 0.25*aspectScore)
+        : (0.55*circScore + 0.25*fillScore + 0.20*aspectScore);
+
+      // (개선) 반원(가장자리) 보정: 반원 fill이 잘 맞으면 가산
+      if(touchesEdge && fillScoreHalf > fillScoreFull){
+        shapeScore = Math.min(1, shapeScore + 0.06);
+      }
+      // (보너스) 완전원 쪽이 더 맞으면 약간 가산
+      if(!touchesEdge && fillScoreFull > fillScoreHalf){
+        shapeScore = Math.min(1, shapeScore + 0.03);
+      }
+
+      // (개선) score에서 area 영향 완화 + shape 영향 강화 → 작은 공도 살아남게
+      const score = Math.pow(area, 0.72) * Math.pow(0.20 + 0.80*shapeScore, 2.25);
+
+      cand.push({
+        area,
+        cx: (sumX / area),
+        cy: (sumY / area),
+        minX, minY, maxX, maxY,
+        bw, bh, aspect, fill,
+        perimeter,
+        circularity,
+        circScore,
+        fillScoreFull,
+        fillScoreHalf,
+        shapeScore,
+        touchesEdge,
+        score
+      });
     }
 
-    if(area < MIN_AREA || area > MAX_AREA) continue;
+    if(!cand.length) return null;
+    cand.sort((a,b)=>b.score-a.score);
 
-    const bw = (maxX - minX + 1);
-    const bh = (maxY - minY + 1);
-    if(bw < 8 || bh < 8) continue;
+    const best = cand[0];
+    const bestNonEdge = cand.find(c=>!c.touchesEdge) || null;
 
-    const aspect = bw / Math.max(1, bh);
-    if(aspect > 3.2 || aspect < 1/3.2) continue;
-
-    const fill = area / (bw * bh); // 원:~0.785, 반원:~0.392
-    if(fill < 0.12 || fill > 0.98) continue;
-
-    const aspectScore = clamp01(1 - (Math.abs(aspect - 1) / 1.25));
-    const fillScoreFull = clamp01(1 - (Math.abs(fill - 0.785) / 0.785));
-    const fillScoreHalf = clamp01(1 - (Math.abs(fill - 0.392) / 0.392));
-    const fillScore = Math.max(fillScoreFull, fillScoreHalf * 0.95);
-
-    const shapeScore = clamp01(0.55*aspectScore + 0.45*fillScore);
-    const score = area * shapeScore;
-
-    cand.push({
-      area,
-      cx: (sumX / area),
-      cy: (sumY / area),
-      minX, minY, maxX, maxY,
-      bw, bh, aspect, fill,
-      shapeScore,
-      touchesEdge,
-      score
-    });
+    // (개선) edge 후보를 “너무 쉽게” 버리지 않도록 조건 강화
+    if(bestNonEdge && best.touchesEdge){
+      const ratio = bestNonEdge.score / Math.max(1e-9, best.score);
+      if(ratio >= 0.92 && bestNonEdge.shapeScore >= best.shapeScore * 0.94){
+        return bestNonEdge;
+      }
+    }
+    return best;
   }
 
-  if(!cand.length) return null;
-  cand.sort((a,b)=>b.score-a.score);
-
-  const best = cand[0];
-  const bestNonEdge = cand.find(c=>!c.touchesEdge) || null;
-  if(bestNonEdge && best.touchesEdge){
-    if(bestNonEdge.score >= best.score * 0.72){
-      return bestNonEdge;
+  // (개선) 2-pass: 기본 탐색 실패하면 작은 공 탐색 자동 실행
+  for(let pi=0; pi<passes.length; pi++){
+    const r = runPass(passes[pi]);
+    if(r){
+      r.pass = pi;
+      return r;
     }
   }
-  return best;
+  return null;
 }
 
 function computeBallConfidence(ball, w, h){
   const frameArea = w*h;
-  const areaNorm = clamp01(ball.area / Math.max(1, frameArea * 0.02));
-  let conf = 0.12 + 0.78*ball.shapeScore + 0.18*areaNorm;
-  if(ball.touchesEdge) conf -= 0.03;
+
+  const areaNorm = clamp01(ball.area / Math.max(1, frameArea * 0.03)); // 3%에서 포화
+  const sizeScore = clamp01(Math.sqrt(areaNorm));
+
+  const shapeScore = clamp01(ball.shapeScore || 0);
+  const circScore  = clamp01(ball.circScore || clamp01((ball.circularity - 0.10) / (0.92 - 0.10)));
+
+  // (개선) 원형도/shape 비중 강화 + edge 감점 제거
+  let conf = 0.08
+           + 0.60*shapeScore
+           + 0.18*circScore
+           + 0.20*sizeScore;
+
+  // (개선) 가장자리(반원)일 때 보정: 반원 fill 점수가 좋으면 약간 가산
+  if(ball.touchesEdge){
+    conf += 0.03 * clamp01(ball.fillScoreHalf || 0);
+  }
+
+  // pass1(작은 공 탐색) 결과는 노이즈 가능성이 있으니 아주 미세하게만 보정(거의 영향 없음)
+  if(ball.pass === 1){
+    conf -= 0.01;
+  }
+
   return clamp01(conf) * 100;
 }
 
@@ -1962,7 +2108,7 @@ async function runOcrOnVideo(video){
       conf: conf,
       gesture: pos.code,
       cell: {row:pos.row, col:pos.col},
-      ball: { cx:pos.cxN, cy:pos.cyN, edge:ball.touchesEdge }
+      ball: { cx:pos.cxN, cy:pos.cyN, edge:ball.touchesEdge, pass: ball.pass }
     };
   }catch(e){
     ocrBusy = false;
@@ -2050,7 +2196,6 @@ function startDetectLoop(){
       if(now - panelLastDetectTs >= DETECT_PERIOD_MS){
         panelLastDetectTs = now;
 
-        // ★ 라인 위치를 실제 영상 표시영역에 맞춤(9등분)
         syncGridOverlayToVideo(camVideo, camWrap, gridOverlayPanel);
 
         const res = await runOcrOnVideo(camVideo);
@@ -2173,7 +2318,6 @@ async function startOverlayEyes(){
     if(now - overlayLastDetectTs >= DETECT_PERIOD_MS){
       overlayLastDetectTs = now;
 
-      // ★ 라인 위치를 실제 영상 표시영역에 맞춤(전체화면)
       syncGridOverlayToVideo(eyesCam, document.getElementById('ovCamWrap'), gridOverlayOverlay);
 
       const res = await runOcrOnVideo(eyesCam);

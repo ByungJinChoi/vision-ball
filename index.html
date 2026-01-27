@@ -2,698 +2,416 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
-  <title>9분할 동그라미(원) 위치 인식 테스트 v2</title>
-
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>Ball Zone Detector (3x3)</title>
   <style>
-    :root{
-      --bg:#0b0f14;
-      --fg:#e5e7eb;
-      --muted:#9ca3af;
-    }
-    *{ box-sizing:border-box; }
-    html,body{ height:100%; margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--fg); }
+    :root { --fg: #00ff88; --fg2:#00b7ff; --bg: #000; }
+    body { margin:0; background:var(--bg); color:#fff; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", sans-serif; overflow:hidden; }
+    .wrap { position:relative; width:100vw; height:100vh; }
+    video, canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+    #overlay { pointer-events:none; }
 
-    header{
-      padding: 12px 14px;
-      border-bottom: 1px solid rgba(255,255,255,.08);
-      display:flex;
-      align-items:center;
-      gap:12px;
-      flex-wrap:wrap;
+    .hud {
+      position:absolute; left:0; right:0; bottom:0;
+      padding:10px 12px 14px;
+      background: linear-gradient(to top, rgba(0,0,0,0.75), rgba(0,0,0,0));
+      display:flex; gap:10px; align-items:flex-end; justify-content:space-between;
     }
-    header .title{
-      font-weight:900;
-      letter-spacing:.2px;
+    .resultBox{
+      display:flex; flex-direction:column; gap:6px;
     }
-    header .spacer{ flex:1 1 auto; }
-    .btn{
-      border:0;
-      border-radius:10px;
-      padding:10px 14px;
-      font-weight:800;
-      cursor:pointer;
-      background:#2563eb;
-      color:white;
-      box-shadow:0 6px 18px rgba(0,0,0,.25);
+    .label { font-size:12px; opacity:0.85; }
+    .bigNum{
+      font-size:44px; font-weight:800; line-height:1;
+      letter-spacing:1px;
+      color: var(--fg);
+      text-shadow: 0 0 10px rgba(0,255,136,0.3);
     }
-    .btn.off{ background:#ef4444; }
-    .pill{
-      display:inline-flex;
-      align-items:center;
-      gap:8px;
-      padding:8px 10px;
-      border-radius:999px;
-      border:1px solid rgba(255,255,255,.14);
-      background: rgba(0,0,0,.25);
-      font: 800 13px/1 system-ui;
+    .smallRow{ display:flex; gap:10px; font-size:12px; opacity:0.85; }
+    .btnBox{ display:flex; gap:8px; align-items:center; }
+    button{
+      appearance:none; border:1px solid rgba(255,255,255,0.2);
+      background:rgba(255,255,255,0.08); color:#fff;
+      padding:10px 12px; border-radius:12px; font-weight:700;
+      backdrop-filter: blur(6px);
     }
-    .pill .muted{ color:var(--muted); font-weight:700; }
-
-    main{
-      height: calc(100vh - 64px);
-      display:flex;
-      flex-direction:column;
-      padding:12px;
-      gap:12px;
+    button:active{ transform: translateY(1px); }
+    .note{ position:absolute; top:10px; left:10px; right:10px;
+      font-size:12px; line-height:1.35; opacity:0.9;
+      background:rgba(0,0,0,0.35); padding:10px 12px; border-radius:12px;
+      border:1px solid rgba(255,255,255,0.15);
+      backdrop-filter: blur(6px);
     }
-
-    .stage{
-      flex:1 1 auto;
-      min-height: 260px;
-      position:relative;
-      background:#000;
-      border-radius:14px;
-      overflow:hidden;
-      border:1px solid rgba(255,255,255,.10);
-    }
-    video{
-      width:100%;
-      height:100%;
-      object-fit: contain;
-      background:#000;
-    }
-    canvas#overlay{
-      position:absolute;
-      inset:0;
-      width:100%;
-      height:100%;
-      pointer-events:none;
-    }
-
-    .footer{
-      display:flex;
-      gap:10px;
-      flex-wrap:wrap;
-      align-items:center;
-      justify-content:space-between;
-    }
-    .small{
-      color:var(--muted);
-      font-size:12px;
-      line-height:1.4;
-    }
-    code{
-      color:#d1fae5;
-      background: rgba(16,185,129,.12);
-      border:1px solid rgba(16,185,129,.25);
-      padding:2px 6px;
-      border-radius:8px;
-      font-weight:800;
-    }
+    .warn{ color:#ffd36a; font-weight:700; }
   </style>
-
-  <script>
-    let cvReady = false;
-    function setStatus(msg){
-      const el = document.getElementById('statusText');
-      if(el) el.textContent = msg;
-    }
-    function onOpenCvScriptLoaded(){
-      if(typeof cv === 'undefined'){
-        setStatus('OpenCV 로딩 실패(네트워크/차단 확인)');
-        return;
-      }
-      cv['onRuntimeInitialized'] = () => {
-        cvReady = true;
-        setStatus('OpenCV 준비완료');
-      };
-      setStatus('OpenCV 런타임 초기화중...');
-    }
-  </script>
-  <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvScriptLoaded()"></script>
 </head>
-
 <body>
-  <header>
-    <div class="title">🎥 9분할 동그라미(원) 위치 인식 테스트 v2</div>
-    <div class="spacer"></div>
-    <button id="camBtn" class="btn">캠 켜기</button>
-    <span class="pill"><span class="muted">상태</span> <span id="statusText">OpenCV 로딩중...</span></span>
-    <span class="pill"><span class="muted">인식</span> <span id="resultText">—</span></span>
-  </header>
+  <div class="wrap">
+    <video id="video" playsinline autoplay muted></video>
+    <canvas id="overlay"></canvas>
 
-  <main>
-    <div class="stage" id="stage">
-      <video id="video" playsinline autoplay muted></video>
-      <canvas id="overlay"></canvas>
+    <div class="note" id="note">
+      • 후면 카메라로 공(원형)을 인식해 3×3 구역(1~9) 중 가장 가까운 번호를 표시합니다.<br/>
+      • 원형이 충분히 “완벽”하지 않으면 <span class="warn">0</span>을 표시합니다. (인식 주기 0.5초)
     </div>
 
-    <div class="footer">
-      <div class="small">
-        인식 주기: <code>0.5초</code> / 우선순위: <code>완전도(360도) + 방향일치(기울기) + 반지름일관성</code><br/>
-        (배경 격자/무늬로 생기는 가짜 원을 강하게 억제)
+    <div class="hud">
+      <div class="resultBox">
+        <div class="label">가장 가까운 구역 번호</div>
+        <div class="bigNum" id="zoneNum">0</div>
+        <div class="smallRow">
+          <div id="scoreTxt">score: -</div>
+          <div id="posTxt">pos: -</div>
+          <div id="fpsTxt">tick: 500ms</div>
+        </div>
       </div>
-      <div class="small" id="debugText"></div>
+      <div class="btnBox">
+        <button id="btnStart">카메라 시작</button>
+        <button id="btnFlip">미러 토글</button>
+      </div>
     </div>
-  </main>
+  </div>
 
 <script>
 (() => {
-  const DETECT_MS = 500;
-
   const video = document.getElementById('video');
-  const stage = document.getElementById('stage');
   const overlay = document.getElementById('overlay');
-  const octx = overlay.getContext('2d');
+  const ctx = overlay.getContext('2d', { alpha: true });
 
-  const camBtn = document.getElementById('camBtn');
-  const resultText = document.getElementById('resultText');
-  const debugText = document.getElementById('debugText');
+  const zoneNumEl = document.getElementById('zoneNum');
+  const scoreTxt = document.getElementById('scoreTxt');
+  const posTxt = document.getElementById('posTxt');
 
-  let stream = null;
-  let camOn = false;
+  const btnStart = document.getElementById('btnStart');
+  const btnFlip = document.getElementById('btnFlip');
 
-  // 처리용 캔버스(축소)
+  // Offscreen (processing) canvas
   const proc = document.createElement('canvas');
   const pctx = proc.getContext('2d', { willReadFrequently:true });
-  let procW = 360, procH = 240;
 
-  // 흔들림 완화(2회 연속 같은 존이면 확정)
-  let stableZone = null;
-  let pendingZone = null;
-  let pendingCount = 0;
-
-  // 마지막 원(약한 힌트)
-  let lastCircle = null; // {x,y,r}
-
-  let busy = false;
+  let stream = null;
+  let mirror = false;
   let timer = null;
 
-  function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+  // Detection settings (튜닝 포인트)
+  const TICK_MS = 500;
 
-  function resizeOverlay(){
+  // “완벽한 동그라미” 기준 (엄격하게 잡음)
+  const MIN_RADIUS_PX = 18;          // 너무 작은 노이즈 방지
+  const MAX_RADIUS_PX = 260;         // 너무 큰 오검출 방지(화면 크기에 따라 조정)
+  const MIN_CIRCULARITY = 0.86;      // 1에 가까울수록 원
+  const MAX_RADIUS_STD_RATIO = 0.10; // 중심에서 에지까지 거리 편차(작을수록 완벽한 원)
+  const MIN_EDGE_PIXELS = 420;       // 원 둘레를 이루는 에지 픽셀 수 최소
+  const EDGE_THRESHOLD = 60;         // Sobel magnitude threshold(클수록 엄격)
+
+  // Zone map: 3x3, 번호는 1~9 (좌상=1, 우상=3, 좌하=7, 우하=9)
+  function getZoneFromPoint(x, y, w, h) {
+    const col = Math.min(2, Math.max(0, Math.floor(x / (w/3))));
+    const row = Math.min(2, Math.max(0, Math.floor(y / (h/3))));
+    return row * 3 + col + 1;
+  }
+
+  function resizeCanvases() {
     const dpr = Math.max(1, window.devicePixelRatio || 1);
-    const w = stage.clientWidth || 1;
-    const h = stage.clientHeight || 1;
-    overlay.width = Math.round(w * dpr);
-    overlay.height = Math.round(h * dpr);
-    overlay.style.width = w + 'px';
-    overlay.style.height = h + 'px';
-    octx.setTransform(dpr,0,0,dpr,0,0);
-  }
+    const rect = overlay.getBoundingClientRect();
+    overlay.width = Math.round(rect.width * dpr);
+    overlay.height = Math.round(rect.height * dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
 
-  function getDisplayRect(){
-    const vw = video.videoWidth || 0;
-    const vh = video.videoHeight || 0;
-    const ww = stage.clientWidth || 1;
-    const wh = stage.clientHeight || 1;
-    if(vw <= 0 || vh <= 0) return {left:0, top:0, width:ww, height:wh, scale:1};
-
-    const s = Math.min(ww / vw, wh / vh);
-    const dw = vw * s;
-    const dh = vh * s;
-    const left = (ww - dw) / 2;
-    const top  = (wh - dh) / 2;
-    return {left, top, width:dw, height:dh, scale:s};
-  }
-
-  function ensureProcSize(){
+    // processing canvas는 video 실제 픽셀 기준으로 맞춤(가능하면)
     const vw = video.videoWidth || 640;
     const vh = video.videoHeight || 480;
 
-    let w = 360;
-    let h = Math.round(w * (vh / vw));
-
-    w = Math.max(300, w);
-    h = Math.max(220, h);
-
-    // 3의 배수로
-    w = w - (w % 3);
-    h = h - (h % 3);
-
-    if(procW !== w || procH !== h){
-      procW = w; procH = h;
-      proc.width = procW;
-      proc.height = procH;
-    }
+    // 성능/안정성 위해 처리 해상도 약간 축소(너무 줄이면 정확도 감소)
+    const scale = Math.min(1, 720 / Math.max(vw, vh));
+    proc.width = Math.round(vw * scale);
+    proc.height = Math.round(vh * scale);
   }
 
-  function zoneFromPoint(x, y){
-    const cw = procW / 3;
-    const ch = procH / 3;
-    let col = Math.floor(x / cw);
-    let row = Math.floor(y / ch);
-    col = clamp(col, 0, 2);
-    row = clamp(row, 0, 2);
-    const zone = row * 3 + col + 1;
-    return {zone, row, col};
-  }
-
-  function drawGridAndNumbers(rect){
-    const x0 = rect.left, y0 = rect.top, w = rect.width, h = rect.height;
-
-    // lines
-    octx.strokeStyle = 'rgba(255,255,255,0.9)';
-    octx.lineWidth = 1;
-    octx.beginPath();
-    octx.moveTo(x0 + w/3, y0);      octx.lineTo(x0 + w/3, y0 + h);
-    octx.moveTo(x0 + 2*w/3, y0);    octx.lineTo(x0 + 2*w/3, y0 + h);
-    octx.moveTo(x0, y0 + h/3);      octx.lineTo(x0 + w, y0 + h/3);
-    octx.moveTo(x0, y0 + 2*h/3);    octx.lineTo(x0 + w, y0 + 2*h/3);
-    octx.stroke();
-
-    // numbers
-    octx.font = '900 16px system-ui';
-    octx.textAlign = 'center';
-    octx.textBaseline = 'middle';
-
-    for(let r=0;r<3;r++){
-      for(let c=0;c<3;c++){
-        const n = r*3 + c + 1;
-        const cx = x0 + (c+0.5)*(w/3);
-        const cy = y0 + (r+0.5)*(h/3);
-
-        octx.fillStyle = 'rgba(0,0,0,0.28)';
-        octx.strokeStyle = 'rgba(255,255,255,0.22)';
-        octx.lineWidth = 1;
-        octx.beginPath();
-        octx.arc(cx, cy, 14, 0, Math.PI*2);
-        octx.fill();
-        octx.stroke();
-
-        octx.fillStyle = 'rgba(255,255,255,0.95)';
-        octx.fillText(String(n), cx, cy);
-      }
-    }
-  }
-
-  function drawZoneHighlight(rect, zone){
-    if(!zone) return;
-    const z = zone - 1;
-    const row = Math.floor(z / 3);
-    const col = z % 3;
-
-    const x0 = rect.left + col*(rect.width/3);
-    const y0 = rect.top  + row*(rect.height/3);
-    const w = rect.width/3;
-    const h = rect.height/3;
-
-    octx.fillStyle = 'rgba(255,255,255,0.08)';
-    octx.strokeStyle = 'rgba(255,255,255,0.35)';
-    octx.lineWidth = 2;
-    octx.fillRect(x0, y0, w, h);
-    octx.strokeRect(x0, y0, w, h);
-  }
-
-  function drawCircle(rect, circle){
-    if(!circle) return;
-    const sx = rect.width / procW;
-    const sy = rect.height / procH;
-
-    const cx = rect.left + circle.x * sx;
-    const cy = rect.top  + circle.y * sy;
-    const r  = Math.max(2, circle.r * ((sx+sy)*0.5));
-
-    octx.strokeStyle = 'rgba(0,255,220,0.95)';
-    octx.lineWidth = 2;
-    octx.beginPath();
-    octx.arc(cx, cy, r, 0, Math.PI*2);
-    octx.stroke();
-
-    octx.strokeStyle = 'rgba(0,255,220,0.85)';
-    octx.lineWidth = 2;
-    octx.beginPath();
-    octx.moveTo(cx-8, cy); octx.lineTo(cx+8, cy);
-    octx.moveTo(cx, cy-8); octx.lineTo(cx, cy+8);
-    octx.stroke();
-  }
-
-  function render(circle, zone, debugLine){
-    resizeOverlay();
-    octx.clearRect(0,0, overlay.width, overlay.height);
-
-    const rect = getDisplayRect();
-    drawGridAndNumbers(rect);
-    drawZoneHighlight(rect, zone);
-    drawCircle(rect, circle);
-
-    resultText.textContent = zone ? `${zone}번` : '—';
-    debugText.textContent = debugLine || '';
-  }
-
-  // ---- 원 둘레 샘플링 기반 점수 (완벽한 원 우선) ----
-  function scoreCircleByRing(gx, gy, mag, blurGray, x, y, r, magThr){
-    const w = mag.cols, h = mag.rows;
-    const gxD = gx.data32F, gyD = gy.data32F, mD = mag.data32F;
-    const gD  = blurGray.data; // uint8
-
-    const N = 96;
-    const band = 2; // r±2px 범위에서 최대 기울기 찾기
-
-    let hits = 0;
-    let alignSum = 0;
-
-    // 반지름 일관성 계산용
-    let radSum = 0;
-    let radSum2 = 0;
-
-    // inside / outside contrast(약하게)
-    // 내부 평균: r*0.70, 외부 평균: r*1.15
-    const innerR = Math.max(2, r*0.70);
-    const outerR = r*1.15;
-
-    // 아주 간단한 평균 샘플 (속도 위해 각도 샘플 재사용)
-    let inSum=0, inCnt=0, outSum=0, outCnt=0;
-
-    for(let i=0;i<N;i++){
-      const a = (i / N) * Math.PI * 2;
-      const ux = Math.cos(a), uy = Math.sin(a);
-
-      // ring에서 가장 강한 기울기 위치 찾기 (완전도↑, 가짜원↓)
-      let bestM = 0;
-      let bestPx = -1, bestPy = -1;
-      let bestRR = r;
-
-      for(let dt=-band; dt<=band; dt++){
-        const rr = r + dt;
-        const px = Math.round(x + rr * ux);
-        const py = Math.round(y + rr * uy);
-        if(px<0||py<0||px>=w||py>=h) continue;
-        const mv = mD[py*w + px];
-        if(mv > bestM){
-          bestM = mv;
-          bestPx = px;
-          bestPy = py;
-          bestRR = rr;
-        }
-      }
-
-      // 내부/외부 샘플
-      {
-        const ix = Math.round(x + innerR * ux);
-        const iy = Math.round(y + innerR * uy);
-        if(ix>=0&&iy>=0&&ix<w&&iy<h){ inSum += gD[iy*w + ix]; inCnt++; }
-
-        const ox = Math.round(x + outerR * ux);
-        const oy = Math.round(y + outerR * uy);
-        if(ox>=0&&oy>=0&&ox<w&&oy<h){ outSum += gD[oy*w + ox]; outCnt++; }
-      }
-
-      if(bestPx < 0) continue;
-      if(bestM < magThr) continue;
-
-      hits++;
-
-      // 반지름 일관성
-      radSum += bestRR;
-      radSum2 += bestRR*bestRR;
-
-      // 기울기 방향이 반지름 방향(ux,uy)과 얼마나 일치하는지(완벽한 원 우선)
-      const gxx = gxD[bestPy*w + bestPx];
-      const gyy = gyD[bestPy*w + bestPx];
-      const gn = Math.hypot(gxx, gyy) || 1e-6;
-      const dot = (gxx*ux + gyy*uy) / gn; // -1..1
-      alignSum += Math.abs(dot);
-    }
-
-    const hitRatio = hits / N;
-    if(hitRatio < 0.33) return null; // 너무 부분적이면(가짜 원) 컷
-
-    const alignAvg = alignSum / Math.max(1, hits); // 0..1
-
-    // 반지름 표준편차(일관성)
-    const radMean = radSum / Math.max(1, hits);
-    const radVar = (radSum2 / Math.max(1, hits)) - radMean*radMean;
-    const radStd = Math.sqrt(Math.max(0, radVar));
-    const consScore = clamp(1 - (radStd / Math.max(1, r*0.10)), 0, 1);
-
-    let contrastScore = 0;
-    let brightBonus = 0;
-    if(inCnt>12 && outCnt>12){
-      const inMean = inSum/inCnt;
-      const outMean = outSum/outCnt;
-      const diff = inMean - outMean;
-      contrastScore = clamp(Math.abs(diff) / 80, 0, 1);
-      // 내부가 더 밝으면(흰 공) 우선권 보너스(필수 아님)
-      brightBonus = clamp((diff - 6) / 70, 0, 1);
-    }
-
-    // alignScore: 0.45 이상부터 점수 크게
-    const alignScore = clamp((alignAvg - 0.45) / 0.55, 0, 1);
-
-    // 최종 점수: "완전한 원"이 이김
-    let score =
-      0.52*hitRatio +
-      0.26*alignScore +
-      0.18*consScore +
-      0.04*contrastScore +
-      0.10*brightBonus;
-
-    // 화면 가장자리 과도한 원은 약간 감점(하지만 완전히 배제하지 않음)
-    const margin = Math.max(3, r*0.12);
-    if(x < margin || y < margin || x > (w-margin) || y > (h-margin)){
-      score *= 0.90;
-    }
-
-    return {
-      score,
-      hitRatio,
-      alignAvg,
-      consScore,
-      contrastScore,
-      brightBonus
-    };
-  }
-
-  function mergeCircleList(out, mat, dupDist=8, dupRad=8){
-    if(!mat || mat.cols<=0) return;
-    for(let i=0;i<mat.cols;i++){
-      const x = mat.data32F[i*3 + 0];
-      const y = mat.data32F[i*3 + 1];
-      const r = mat.data32F[i*3 + 2];
-      if(!isFinite(x)||!isFinite(y)||!isFinite(r)) continue;
-
-      // 너무 작은/너무 큰 것 제외(노이즈/배경 전체 원)
-      const minDim = Math.min(procW, procH);
-      const minR = Math.max(10, Math.round(minDim*0.03));
-      const maxR = Math.round(minDim*0.48);
-      if(r < minR || r > maxR) continue;
-
-      let dup = false;
-      for(const c of out){
-        const dx = c.x-x, dy=c.y-y;
-        if((dx*dx+dy*dy) < dupDist*dupDist && Math.abs(c.r-r) < dupRad){
-          dup = true; break;
-        }
-      }
-      if(!dup) out.push({x,y,r});
-    }
-  }
-
-  async function detectOnce(){
-    if(!camOn) return;
-    if(!cvReady) { render(null, stableZone, 'OpenCV 준비중...'); return; }
-    if(video.readyState < 2) return;
-    if(busy) return;
-
-    busy = true;
-    try{
-      ensureProcSize();
-      pctx.drawImage(video, 0, 0, procW, procH);
-
-      const src = cv.imread(proc);                 // RGBA
-      const gray = new cv.Mat();
-      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-
-      // 골프공 딤플/노이즈 완화: medianBlur가 효과적
-      const blur = new cv.Mat();
-      cv.medianBlur(gray, blur, 5);
-
-      // edges
-      const edges = new cv.Mat();
-      cv.Canny(blur, edges, 70, 150);
-
-      // gradients
-      const gx = new cv.Mat(), gy = new cv.Mat(), mag = new cv.Mat();
-      cv.Sobel(blur, gx, cv.CV_32F, 1, 0, 3);
-      cv.Sobel(blur, gy, cv.CV_32F, 0, 1, 3);
-      cv.magnitude(gx, gy, mag);
-
-      // mag threshold(자동)
-      const mean = new cv.Mat(), std = new cv.Mat();
-      cv.meanStdDev(mag, mean, std);
-      const mMean = mean.data64F[0] || 0;
-      const mStd  = std.data64F[0]  || 0;
-      mean.delete(); std.delete();
-
-      // 너무 낮으면 노이즈가 ring hit로 잡힘 -> 하한을 둠
-      const magThr = clamp(mMean + mStd*0.65, 12, 80);
-
-      // HoughCircles: strict + loose 두 번
-      const circles1 = new cv.Mat();
-      const circles2 = new cv.Mat();
-      const minDim = Math.min(procW, procH);
-      const minR = Math.max(10, Math.round(minDim * 0.03));
-      const maxR = Math.round(minDim * 0.48);
-      const minDist = Math.max(22, Math.round(procH / 6));
-
-      // strict
-      cv.HoughCircles(blur, circles1, cv.HOUGH_GRADIENT, 1.2, minDist, 100, 40, minR, maxR);
-      // loose (곡선/부분원도 어느 정도 잡히게)
-      cv.HoughCircles(blur, circles2, cv.HOUGH_GRADIENT, 1.2, minDist, 100, 30, minR, maxR);
-
-      const cand = [];
-      mergeCircleList(cand, circles1);
-      mergeCircleList(cand, circles2);
-
-      let best = null;
-
-      for(const c of cand){
-        // 1) 링 기반 점수(완전 원 우선)
-        const s = scoreCircleByRing(gx, gy, mag, blur, c.x, c.y, c.r, magThr);
-        if(!s) continue;
-
-        // 2) 이전 위치 힌트(아주 약하게만)
-        let bonusNear = 0;
-        if(lastCircle){
-          const dx = c.x - lastCircle.x;
-          const dy = c.y - lastCircle.y;
-          const d = Math.hypot(dx,dy);
-          const near = clamp(1 - d/(minDim*0.40), 0, 1);
-          bonusNear = 0.02 * near; // 아주 약하게(잠금 방지)
-        }
-
-        const score = s.score + bonusNear;
-
-        const item = {
-          x:c.x, y:c.y, r:c.r,
-          score,
-          hitRatio:s.hitRatio,
-          alignAvg:s.alignAvg,
-          consScore:s.consScore,
-          contrastScore:s.contrastScore,
-          brightBonus:s.brightBonus
-        };
-
-        if(!best || item.score > best.score){
-          best = item;
-        }
-      }
-
-      // cleanup
-      src.delete(); gray.delete(); blur.delete(); edges.delete();
-      gx.delete(); gy.delete(); mag.delete();
-      circles1.delete(); circles2.delete();
-
-      if(!best || best.score < 0.36){
-        // 너무 애매하면 표시하지 않음(엉뚱한 곳 찍는 것 방지)
-        lastCircle = null;
-        pendingZone = null; pendingCount = 0;
-        render(null, null, '원 후보가 있으나 “완전 원” 점수가 낮아 표시 안 함');
-        return;
-      }
-
-      lastCircle = {x:best.x, y:best.y, r:best.r};
-
-      const z = zoneFromPoint(best.x, best.y).zone;
-
-      // 안정화(2회 연속 같은 존이면 확정)
-      if(stableZone == null){
-        stableZone = z;
-        pendingZone = null; pendingCount = 0;
-      }else if(z === stableZone){
-        pendingZone = null; pendingCount = 0;
-      }else{
-        if(pendingZone === z) pendingCount++;
-        else { pendingZone = z; pendingCount = 1; }
-
-        if(pendingCount >= 2){
-          stableZone = z;
-          pendingZone = null;
-          pendingCount = 0;
-        }
-      }
-
-      const dbg =
-        `score ${(best.score*100).toFixed(1)}% · 완전도 ${(best.hitRatio*100).toFixed(0)}% · ` +
-        `방향 ${(best.alignAvg*100).toFixed(0)}% · 일관 ${(best.consScore*100).toFixed(0)}%` +
-        (best.brightBonus>0 ? ` · 밝기보너스 ${(best.brightBonus*100).toFixed(0)}%` : '');
-
-      render(best, stableZone, dbg);
-
-    }catch(e){
-      console.error(e);
-      render(null, null, '오류: ' + e);
-    }finally{
-      busy = false;
-    }
-  }
-
-  async function startCam(){
-    if(camOn) return;
-    try{
+  async function startCamera() {
+    if (stream) return;
+    try {
       stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          facingMode: { ideal: 'environment' },
-          width: { ideal: 640 },
-          height:{ ideal: 480 },
-          frameRate: { ideal: 30, max: 30 }
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
         },
         audio: false
       });
-
       video.srcObject = stream;
       await video.play();
 
-      camOn = true;
-      camBtn.textContent = '캠 끄기';
-      camBtn.classList.add('off');
+      resizeCanvases();
+      window.addEventListener('resize', resizeCanvases);
 
-      stableZone = null; pendingZone = null; pendingCount = 0;
-      lastCircle = null;
-
-      render(null, null, '');
-
-      if(timer) clearInterval(timer);
-      timer = setInterval(detectOnce, DETECT_MS);
-
-      resizeOverlay();
-      window.addEventListener('resize', () => {
-        resizeOverlay();
-        render(lastCircle, stableZone, debugText.textContent || '');
-      });
-
-      setStatus(cvReady ? 'OpenCV 준비완료' : 'OpenCV 준비중...');
-    }catch(e){
-      setStatus('카메라 실패: ' + e);
+      if (timer) clearInterval(timer);
+      timer = setInterval(detectTick, TICK_MS);
+      btnStart.textContent = "카메라 실행중";
+      btnStart.disabled = true;
+    } catch (e) {
+      alert("카메라를 시작할 수 없습니다. HTTPS 환경/권한을 확인해주세요.\n" + e.message);
+      console.error(e);
     }
   }
 
-  function stopCam(){
-    if(!camOn) return;
-    try{
-      if(timer){ clearInterval(timer); timer = null; }
-      try{ video.pause(); }catch(_e){}
-      if(video.srcObject){
-        try{ video.srcObject.getTracks().forEach(t=>t.stop()); }catch(_e){}
-        video.srcObject = null;
-      }
-      stream = null;
-      camOn = false;
+  btnStart.addEventListener('click', startCamera);
 
-      camBtn.textContent = '캠 켜기';
-      camBtn.classList.remove('off');
-
-      stableZone = null; pendingZone = null; pendingCount = 0;
-      lastCircle = null;
-
-      resultText.textContent = '—';
-      debugText.textContent = '';
-
-      resizeOverlay();
-      octx.clearRect(0,0, overlay.width, overlay.height);
-    }catch(_e){}
-  }
-
-  camBtn.addEventListener('click', () => {
-    if(camOn) stopCam();
-    else startCam();
+  btnFlip.addEventListener('click', () => {
+    mirror = !mirror;
+    // video 미러는 CSS로
+    video.style.transform = mirror ? "scaleX(-1)" : "none";
   });
 
-  resizeOverlay();
+  // Draw grid + numbers on overlay
+  function drawGrid(w, h) {
+    ctx.save();
+    ctx.clearRect(0,0,w,h);
+
+    // grid lines
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(0,255,136,0.55)";
+    for (let i=1;i<=2;i++){
+      ctx.beginPath();
+      ctx.moveTo((w/3)*i, 0);
+      ctx.lineTo((w/3)*i, h);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(0, (h/3)*i);
+      ctx.lineTo(w, (h/3)*i);
+      ctx.stroke();
+    }
+
+    // numbers 1~9
+    ctx.font = "bold 28px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+    ctx.fillStyle = "rgba(0,183,255,0.85)";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    for (let r=0;r<3;r++){
+      for (let c=0;c<3;c++){
+        const num = r*3+c+1;
+        const cx = (c+0.5)*(w/3);
+        const cy = (r+0.5)*(h/3);
+        ctx.fillText(String(num), cx, cy);
+      }
+    }
+    ctx.restore();
+  }
+
+  // Sobel edge detection on grayscale, returns edge map (Uint8Array 0/1) and list of edge points
+  function sobelEdges(gray, w, h, threshold) {
+    const edges = new Uint8Array(w*h);
+    const pts = [];
+    // skip border
+    for (let y=1; y<h-1; y++){
+      const yw = y*w;
+      for (let x=1; x<w-1; x++){
+        const i = yw + x;
+        const a00 = gray[i-w-1], a01 = gray[i-w], a02 = gray[i-w+1];
+        const a10 = gray[i-1],   a11 = gray[i],   a12 = gray[i+1];
+        const a20 = gray[i+w-1], a21 = gray[i+w], a22 = gray[i+w+1];
+
+        const gx = (-a00 + a02) + (-2*a10 + 2*a12) + (-a20 + a22);
+        const gy = ( a00 + 2*a01 + a02) + (-a20 -2*a21 - a22);
+        const mag = Math.abs(gx) + Math.abs(gy); // L1 근사
+
+        if (mag >= threshold) {
+          edges[i] = 1;
+          pts.push([x,y]);
+        }
+      }
+    }
+    return { edges, pts };
+  }
+
+  // RANSAC-like circle fit by sampling 3 points (간단 버전)
+  function circleFrom3(p1, p2, p3) {
+    const [x1,y1]=p1, [x2,y2]=p2, [x3,y3]=p3;
+    const a = x1 - x2, b = y1 - y2;
+    const c = x1 - x3, d = y1 - y3;
+    const e = ((x1*x1 - x2*x2) + (y1*y1 - y2*y2)) / 2;
+    const f = ((x1*x1 - x3*x3) + (y1*y1 - y3*y3)) / 2;
+    const det = a*d - b*c;
+    if (Math.abs(det) < 1e-6) return null;
+    const cx = (d*e - b*f) / det;
+    const cy = (-c*e + a*f) / det;
+    const r = Math.hypot(cx-x1, cy-y1);
+    return { cx, cy, r };
+  }
+
+  function computeCircularity(area, perimeter) {
+    // 4πA / P^2 (1이면 완벽한 원)
+    if (perimeter <= 1) return 0;
+    return (4 * Math.PI * area) / (perimeter * perimeter);
+  }
+
+  // 대략적 원 후보 검출:
+  // 1) Sobel 에지 추출
+  // 2) 에지 점에서 3점 샘플링으로 원 후보 생성 (여러 번)
+  // 3) 후보 원에 대해 에지 근접 점(inlier) 비율/반지름 편차로 score 계산
+  function detectBestCircle(procW, procH) {
+    const img = pctx.getImageData(0,0,procW,procH);
+    const data = img.data;
+
+    // grayscale
+    const gray = new Uint8Array(procW*procH);
+    for (let i=0, j=0; i<data.length; i+=4, j++){
+      // luminance
+      gray[j] = (0.2126*data[i] + 0.7152*data[i+1] + 0.0722*data[i+2]) | 0;
+    }
+
+    const { pts } = sobelEdges(gray, procW, procH, EDGE_THRESHOLD);
+
+    if (pts.length < MIN_EDGE_PIXELS) return null;
+
+    // 샘플링 횟수: 너무 높이면 느려짐
+    const tries = Math.min(220, Math.max(80, Math.floor(pts.length / 30)));
+    let best = null;
+
+    function randPt() {
+      return pts[(Math.random()*pts.length)|0];
+    }
+
+    for (let t=0; t<tries; t++){
+      const p1 = randPt(), p2 = randPt(), p3 = randPt();
+      const c = circleFrom3(p1,p2,p3);
+      if (!c) continue;
+      if (!isFinite(c.cx) || !isFinite(c.cy) || !isFinite(c.r)) continue;
+      if (c.r < MIN_RADIUS_PX || c.r > MAX_RADIUS_PX) continue;
+      if (c.cx < 0 || c.cx >= procW || c.cy < 0 || c.cy >= procH) continue;
+
+      // inlier 검사: 에지 점 중 원 둘레에 가까운 점(허용오차)
+      const tol = Math.max(2.2, c.r * 0.035); // 반지름 비례 허용
+      let inliers = 0;
+      let sumR = 0, sumR2 = 0;
+
+      // 전부 보면 느리니 일부만 샘플
+      const step = Math.max(1, Math.floor(pts.length / 900));
+      for (let k=0; k<pts.length; k+=step){
+        const [x,y] = pts[k];
+        const rr = Math.hypot(x - c.cx, y - c.cy);
+        const d = Math.abs(rr - c.r);
+        if (d <= tol) {
+          inliers++;
+          sumR += rr;
+          sumR2 += rr*rr;
+        }
+      }
+
+      if (inliers < MIN_EDGE_PIXELS * 0.25) continue;
+
+      const n = inliers;
+      const mean = sumR / n;
+      const varr = (sumR2 / n) - (mean*mean);
+      const std = Math.sqrt(Math.max(0, varr));
+      const stdRatio = std / (mean + 1e-6);
+
+      // inlier 비율 근사
+      const inlierRatio = n / (pts.length / step);
+
+      // 원형도 score: inlierRatio가 높고 stdRatio가 낮을수록 좋음
+      const score = (inlierRatio * 1.2) - (stdRatio * 1.8);
+
+      if (!best || score > best.score) {
+        best = { ...c, score, inliers:n, stdRatio };
+      }
+    }
+
+    if (!best) return null;
+
+    // “완벽한 동그라미” 판정 강화
+    if (best.stdRatio > MAX_RADIUS_STD_RATIO) return null;
+    // score 하한(환경 따라 조정 가능)
+    if (best.score < 0.22) return null;
+
+    return best;
+  }
+
+  function detectTick() {
+    if (!video.videoWidth || !video.videoHeight) return;
+
+    // processing canvas에 현재 프레임 그림
+    const vw = video.videoWidth, vh = video.videoHeight;
+    const pw = proc.width, ph = proc.height;
+
+    // video -> proc로 스케일 드로우
+    pctx.save();
+    pctx.clearRect(0,0,pw,ph);
+
+    // 미러가 켜져있다면 processing도 동일하게 미러해줘야 좌표가 맞음
+    if (mirror) {
+      pctx.translate(pw, 0);
+      pctx.scale(-1, 1);
+    }
+    pctx.drawImage(video, 0,0, vw, vh, 0,0, pw, ph);
+    pctx.restore();
+
+    // overlay에 그리드
+    const ow = overlay.getBoundingClientRect().width;
+    const oh = overlay.getBoundingClientRect().height;
+    drawGrid(ow, oh);
+
+    // 원 검출
+    const best = detectBestCircle(pw, ph);
+
+    if (!best) {
+      zoneNumEl.textContent = "0";
+      scoreTxt.textContent = "score: -";
+      posTxt.textContent = "pos: -";
+      return;
+    }
+
+    // proc 좌표 -> overlay 좌표로 변환
+    // video는 object-fit: cover 이므로 화면에 표시된 영역과 비율이 다를 수 있음.
+    // 여기서는 "대략" 맞추기 위해 overlay 전체를 video 프레임으로 본다고 가정(실사용에서 충분히 동작).
+    const cx_norm = best.cx / pw;
+    const cy_norm = best.cy / ph;
+
+    const cx = cx_norm * ow;
+    const cy = cy_norm * oh;
+    const r  = (best.r / pw) * ow;
+
+    // zone 계산
+    const zone = getZoneFromPoint(cx, cy, ow, oh);
+
+    // 표시 업데이트
+    zoneNumEl.textContent = String(zone);
+    scoreTxt.textContent = `score: ${best.score.toFixed(3)} / std: ${best.stdRatio.toFixed(3)} / inliers: ${best.inliers}`;
+    posTxt.textContent = `pos: (${Math.round(cx)}, ${Math.round(cy)})`;
+
+    // overlay에 원 표시
+    ctx.save();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(0,255,136,0.95)";
+    ctx.beginPath();
+    ctx.arc(cx, cy, Math.max(10, r), 0, Math.PI*2);
+    ctx.stroke();
+
+    // 중심점
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    ctx.beginPath();
+    ctx.arc(cx, cy, 4, 0, Math.PI*2);
+    ctx.fill();
+
+    // zone 강조 박스
+    const c = (zone-1)%3;
+    const rr = Math.floor((zone-1)/3);
+    const zx = c*(ow/3);
+    const zy = rr*(oh/3);
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "rgba(0,183,255,0.95)";
+    ctx.strokeRect(zx+2, zy+2, (ow/3)-4, (oh/3)-4);
+    ctx.restore();
+  }
+
+  // 자동 시작(모바일에서 막힐 수 있어 버튼도 제공)
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    // iOS는 사용자 제스처 필요할 수 있으니 자동은 시도만
+    // 실패해도 버튼으로 시작 가능
+    startCamera().catch(()=>{});
+  }
 })();
 </script>
-
 </body>
 </html>

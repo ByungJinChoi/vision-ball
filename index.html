@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8" />
-<title>XROBO BLE — 공 따라가기 (흰색 동그라미/9분할/완전포함 / 1초 주기)</title>
+<title>XROBO BLE — 공 따라가기 (흰/회색 계통 원형 / 9분할 / 0.5초 주기)</title>
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
 <script src="https://unpkg.com/blockly/blockly.min.js"></script>
 <!-- Tesseract.js (원본 유지: 다른 기능 변경 금지 조건 충족) -->
@@ -1515,10 +1515,12 @@ const digitValEl = digitReadout.querySelector('.value');
 const gridOverlayPanel = document.getElementById('gridOverlayPanel');
 const gridOverlayOverlay = document.getElementById('gridOverlayOverlay');
 
-/* 공 인식 캔버스 */
-const OCR_W = 320, OCR_H = 240;
-/* 1초 간격 */
-const DETECT_PERIOD_MS = 1000;
+/* 공 인식 캔버스 (속도↑: 영상 비율에 맞춰 동적 축소) */
+const OCR_TARGET_W = 240; // 빠르게(0.5초) 돌기 위한 목표 폭
+let OCR_W = 240, OCR_H = 180;
+
+/* 0.5초 간격 */
+const DETECT_PERIOD_MS = 500;
 /* 이벤트 실행 최소 신뢰도(%) */
 const EVENT_CONF_MIN = 50;
 /* (원본 상수 유지) */
@@ -1528,10 +1530,46 @@ const COLOR_TOLERANCE = 24;
 
 let camStream = null, camOn = false, camRAF = null;
 
+/* 캔버스 */
 const ocrCvs = document.createElement('canvas');
-const ocrCtx = ocrCvs.getContext('2d', { willReadFrequently:true });
+let ocrCtx = ocrCvs.getContext('2d', { willReadFrequently:true });
 ocrCvs.width = OCR_W;
 ocrCvs.height = OCR_H;
+
+/* 공용 버퍼(매 프레임 새로 만들지 않음) */
+let _bufN = 0;
+let _bufY = null, _bufC = null, _bufWS = null;
+let _mask = null, _tmp = null, _tmp2 = null;
+let _vis = null, _visStamp = 1;
+let _stack = null;
+
+const _yHist = new Uint32Array(256);
+const _wsHist = new Uint32Array(256);
+
+function ensureBuffers(w,h){
+  const n = w*h;
+  if(n === _bufN && _mask) return;
+  _bufN = n;
+  _bufY = new Uint8Array(n);
+  _bufC = new Uint8Array(n);
+  _bufWS = new Uint8Array(n);
+  _mask = new Uint8Array(n);
+  _tmp  = new Uint8Array(n);
+  _tmp2 = new Uint8Array(n);
+  _vis  = new Uint16Array(n);
+  _stack = new Int32Array(n);
+  _visStamp = 1;
+}
+
+function nextVisStamp(){
+  _visStamp = (_visStamp + 1) & 0xFFFF;
+  if(_visStamp === 0){
+    _visStamp = 1;
+    _vis.fill(0);
+  }
+}
+function wasVisited(i){ return _vis[i] === _visStamp; }
+function setVisited(i){ _vis[i] = _visStamp; }
 
 /* UI */
 function setCamBadge(t){ camBadge.textContent = 'Cam: ' + t; }
@@ -1608,7 +1646,7 @@ function stopCam(){
 }
 camToggle.onclick = ()=> camOn ? stopCam() : startCam();
 
-/* ===== 흰색 동그라미(완전 포함) 인식 준비 ===== */
+/* ===== 흰/회색 계통 원형(완전 포함) 인식 준비 ===== */
 let ocrWorker = null;
 let ocrReady = false;
 let ocrBusy = false;
@@ -1616,21 +1654,50 @@ let ocrBusy = false;
 async function ensureOcr(){
   if(ocrReady) return;
   try{
-    ocrWorker = { kind:'WHITE_CIRCLE_DETECTOR' };
+    ocrWorker = { kind:'WHITEISH_CIRCLE_DETECTOR' };
     ocrReady = true;
-    log('⚪ 흰색 동그라미 인식 준비 완료');
+    log('⚪ 흰/회색 계통 동그라미 인식 준비 완료');
   }catch(e){
-    log('❌ 흰색 동그라미 인식 초기화 실패: '+e);
+    log('❌ 동그라미 인식 초기화 실패: '+e);
+  }
+}
+
+/* 영상 비율에 맞춰 OCR 캔버스 크기 자동 조정(왜곡 방지) */
+function ensureOcrCanvasSize(video){
+  const vw = Math.max(1, video.videoWidth || 320);
+  const vh = Math.max(1, video.videoHeight || 240);
+
+  let w = OCR_TARGET_W;
+  let h = Math.round(w * (vh / vw));
+
+  // 9분할 안정: 3의 배수로 맞춤
+  w = Math.max(180, w);
+  h = Math.max(120, h);
+  w = w - (w % 3);
+  h = h - (h % 3);
+
+  if(ocrCvs.width !== w || ocrCvs.height !== h){
+    ocrCvs.width = w;
+    ocrCvs.height = h;
+    OCR_W = w;
+    OCR_H = h;
+    ocrCtx = ocrCvs.getContext('2d', { willReadFrequently:true });
+    ensureBuffers(OCR_W, OCR_H);
+  }else{
+    ensureBuffers(OCR_W, OCR_H);
   }
 }
 
 /* 전처리: full-frame을 캔버스에 (화면과 동일하게 좌우반전 포함) */
 function preprocessToOcrCanvas(video){
   try{
+    ensureOcrCanvasSize(video);
     const vw = video.videoWidth || 320;
     const vh = video.videoHeight|| 240;
+
     ocrCtx.save();
     ocrCtx.clearRect(0,0, OCR_W, OCR_H);
+    // 화면과 동일(미러)
     ocrCtx.translate(OCR_W, 0);
     ocrCtx.scale(-1, 1);
     ocrCtx.drawImage(video, 0, 0, vw, vh, 0, 0, OCR_W, OCR_H);
@@ -1650,127 +1717,127 @@ function percentileFromHist(hist, total, p){
   return 255;
 }
 
-/* ★ 흰색 마스크: 밝기 높고(화이트) 채도 낮은(색차 작음) 영역만 */
-function buildCircleMask(img, w, h){
+/* 마스크 클로징(팽창→침식) : 끊긴 부분/작은 구멍 완화 */
+function morphCloseInPlace(mask, tmp, tmp2, w, h){
+  const n = w*h;
+  tmp.fill(0);
+
+  // dilate: ON 픽셀 기준으로 주변 ON
+  for(let y=0;y<h;y++){
+    const yw=y*w;
+    for(let x=0;x<w;x++){
+      const i=yw+x;
+      if(!mask[i]) continue;
+      tmp[i]=1;
+      if(x>0) tmp[i-1]=1;
+      if(x<w-1) tmp[i+1]=1;
+      if(y>0) tmp[i-w]=1;
+      if(y<h-1) tmp[i+w]=1;
+      if(x>0&&y>0) tmp[i-w-1]=1;
+      if(x<w-1&&y>0) tmp[i-w+1]=1;
+      if(x>0&&y<h-1) tmp[i+w-1]=1;
+      if(x<w-1&&y<h-1) tmp[i+w+1]=1;
+    }
+  }
+
+  // erode: 4-neighbor + self 모두 ON이면 ON
+  tmp2.fill(0);
+  for(let y=1;y<h-1;y++){
+    const yw=y*w;
+    for(let x=1;x<w-1;x++){
+      const i=yw+x;
+      if(!tmp[i]) continue;
+      if(tmp[i-1] && tmp[i+1] && tmp[i-w] && tmp[i+w]){
+        tmp2[i]=1;
+      }
+    }
+  }
+
+  mask.set(tmp2);
+}
+
+/* 흰색~회색(저채도 + 상대적 밝기) 마스크 생성 (프레임 자동 적응) */
+function buildWhiteishMask(img, w, h){
   const d = img.data;
   const n = w*h;
 
-  const yHist = new Uint32Array(256);
-  const wHist = new Uint32Array(256);
+  _yHist.fill(0);
+  _wsHist.fill(0);
 
-  const yArr = new Uint8Array(n);
-  const cArr = new Uint8Array(n);
-  const wArr = new Uint8Array(n);
-
-  // 1) luminance/chroma/whiteness 계산 + 히스토그램
+  // 1) y/chroma/ws 계산 + hist
   for(let i=0,p=0;i<n;i++,p+=4){
     const r=d[p], g=d[p+1], b=d[p+2];
-    const yv = (r*0.299 + g*0.587 + b*0.114) | 0;
+    const y = (r*0.299 + g*0.587 + b*0.114) | 0;
 
     const mx = (r>g? (r>b?r:b) : (g>b?g:b));
     const mn = (r<g? (r<b?r:b) : (g<b?g:b));
     const chroma = (mx - mn) | 0;
 
-    // whiteness score: 밝기 - 색차(채도 비슷한 대체 지표)
-    let ws = (yv - (chroma*0.85)) | 0;
+    // 회색도 살리기 위해 chroma 패널티를 약하게
+    let ws = (y - chroma*0.55) | 0;
     if(ws<0) ws=0; else if(ws>255) ws=255;
 
-    yArr[i]=yv;
-    cArr[i]=chroma;
-    wArr[i]=ws;
+    _bufY[i]=y;
+    _bufC[i]=chroma;
+    _bufWS[i]=ws;
 
-    yHist[yv]++; wHist[ws]++;
+    _yHist[y]++;
+    _wsHist[ws]++;
   }
 
-  // 2) 동적 임계값: 화면 조건 따라 자동 설정
-  const p90Y = percentileFromHist(yHist, n, 0.90);
-  const p92W = percentileFromHist(wHist, n, 0.92);
+  // 2) 자동 임계값 (어두운 환경에서도 내려갈 수 있게 하한을 낮춤)
+  const p88Y = percentileFromHist(_yHist, n, 0.88);
+  const p93W = percentileFromHist(_wsHist, n, 0.93);
 
-  // 너무 빡세면 공이 안 잡힐 수 있어서 하한 완화
-  const thrY = Math.max(125, Math.min(235, (p90Y - 12)));
-  const thrW = Math.max(130, Math.min(240, (p92W - 10)));
+  let thrY  = Math.max(35, Math.min(235, p88Y - 20));
+  let thrWS = Math.max(40, Math.min(245, p93W - 14));
+  let thrC  = 120; // 채도(색차) 제한: 흰/회색 계열
 
-  // 색차(chroma)는 낮아야 흰색(회색 포함)
-  const thrC = 75;     // 색차가 75 이하면 "흰색 계열"로 허용
-  const thrC2 = 45;    // 더 엄격 조건(어두운 흰색도)
-
-  // 3) 마스크 생성
-  const mask = new Uint8Array(n);
-  let cnt = 0;
+  // 3) mask 생성
+  let count=0;
   for(let i=0;i<n;i++){
-    const yv = yArr[i];
-    const cv = cArr[i];
-    const ws = wArr[i];
-
-    // 기본: (화이트 스코어 높음) AND (밝기 어느 정도) AND (색차 낮음)
-    // 어두운 흰색도 살리기 위해 두 가지 조건 OR
-    const ok = (
-      (ws >= thrW && yv >= thrY && cv <= thrC) ||
-      (ws >= (thrW-12) && yv >= (thrY-10) && cv <= thrC2)
-    );
-
-    if(ok){ mask[i]=1; cnt++; }
+    const y=_bufY[i], c=_bufC[i], ws=_bufWS[i];
+    const ok = (ws>=thrWS && y>=thrY && c<=thrC);
+    _mask[i] = ok?1:0;
+    if(ok) count++;
   }
 
-  // 너무 많이 잡히면(배경이 전체적으로 밝음) → 임계값 소폭 상향
-  if(cnt > n * 0.20){
-    const mask2 = new Uint8Array(n);
-    let cnt2=0;
-    const thrY2 = Math.min(245, thrY + 12);
-    const thrW2 = Math.min(250, thrW + 14);
+  const frac = count / Math.max(1, n);
+
+  // 배경이 밝아 너무 많이 잡히면 → 더 엄격
+  if(frac > 0.18){
+    thrWS = Math.min(250, thrWS + 16);
+    thrY  = Math.min(245, thrY  + 10);
+    thrC  = Math.max(70,  thrC  - 18);
+    count=0;
     for(let i=0;i<n;i++){
-      const yv=yArr[i], cv=cArr[i], ws=wArr[i];
-      if(ws >= thrW2 && yv >= thrY2 && cv <= (thrC-10)){
-        mask2[i]=1; cnt2++;
-      }
+      const y=_bufY[i], c=_bufC[i], ws=_bufWS[i];
+      const ok = (ws>=thrWS && y>=thrY && c<=thrC);
+      _mask[i] = ok?1:0;
+      if(ok) count++;
     }
-    // 개선된 마스크가 너무 적지 않으면 교체
-    if(cnt2 >= 40) return morphClose(mask2, w, h);
+  }
+  // 너무 적게 잡히면(어두움/노출) → 완화
+  else if(frac < 0.0015){
+    thrWS = Math.max(25, thrWS - 18);
+    thrY  = Math.max(25, thrY  - 12);
+    thrC  = Math.min(150, thrC + 20);
+    count=0;
+    for(let i=0;i<n;i++){
+      const y=_bufY[i], c=_bufC[i], ws=_bufWS[i];
+      const ok = (ws>=thrWS && y>=thrY && c<=thrC);
+      _mask[i] = ok?1:0;
+      if(ok) count++;
+    }
   }
 
-  return morphClose(mask, w, h);
+  // 4) 연결성 향상
+  morphCloseInPlace(_mask, _tmp, _tmp2, w, h);
+
+  return { thrY, thrWS, thrC, count };
 }
 
-/* 마스크 클로징(팽창→침식)으로 구멍/끊김 완화 */
-function morphClose(mask, w, h){
-  const n=w*h;
-  const dil = new Uint8Array(n);
-
-  // dilate(8-neighbor)
-  for(let y=0;y<h;y++){
-    const yw = y*w;
-    for(let x=0;x<w;x++){
-      const i = yw + x;
-      if(mask[i]){ dil[i]=1; continue; }
-      let on=0;
-      if(x>0 && mask[i-1]) on=1;
-      else if(x<w-1 && mask[i+1]) on=1;
-      else if(y>0 && mask[i-w]) on=1;
-      else if(y<h-1 && mask[i+w]) on=1;
-      else if(x>0 && y>0 && mask[i-w-1]) on=1;
-      else if(x<w-1 && y>0 && mask[i-w+1]) on=1;
-      else if(x>0 && y<h-1 && mask[i+w-1]) on=1;
-      else if(x<w-1 && y<h-1 && mask[i+w+1]) on=1;
-      if(on) dil[i]=1;
-    }
-  }
-
-  // erode(4-neighbor + self)
-  const out = new Uint8Array(n);
-  for(let y=1;y<h-1;y++){
-    const yw=y*w;
-    for(let x=1;x<w-1;x++){
-      const i=yw+x;
-      if(!dil[i]) continue;
-      if(dil[i-1] && dil[i+1] && dil[i-w] && dil[i+w]){
-        out[i]=1;
-      }
-    }
-  }
-  return out;
-}
-
-/* 후보가 "어느 칸 안에 완전히 들어갔는지" 체크 (bbox 기준 + 여유 margin) */
+/* 후보가 "어느 칸 안에 완전히 들어갔는지" 체크 */
 function containedCellFromBBox(cand, w, h){
   const cellW = w/3, cellH = h/3;
 
@@ -1787,11 +1854,10 @@ function containedCellFromBBox(cand, w, h){
   const y0 = row * cellH;
   const y1 = (row+1) * cellH;
 
-  // margin: 원형 경계가 칸을 살짝 넘어도 오검출 방지(조금 넉넉히)
   const rEst = Math.sqrt(Math.max(1, cand.area) / Math.PI);
   const margin = Math.max(2, Math.round(rEst * 0.10));
 
-  // "완전히 들어가야" 하므로 bbox를 margin만큼 확장해서도 칸 안이어야 함
+  // "완전히 들어가야" 하므로 bbox를 margin 확장한 상태에서도 칸 안이어야 함
   if( (cand.minX - margin) < x0 ) return null;
   if( (cand.maxX + margin) > x1 ) return null;
   if( (cand.minY - margin) < y0 ) return null;
@@ -1799,7 +1865,6 @@ function containedCellFromBBox(cand, w, h){
 
   const num = row*3 + col + 1;
 
-  // 이벤트 코드 매핑(기존 유지)
   const map = {
     1:'B_FAR_LEFT', 2:'B_FAR', 3:'B_FAR_RIGHT',
     4:'B_LEFT',     5:'B_CENTER', 6:'B_RIGHT',
@@ -1809,175 +1874,159 @@ function containedCellFromBBox(cand, w, h){
   return {row, col, num, code: map[num] || 'B_CENTER'};
 }
 
-/* 연결요소 분석 → "흰색" + "완전 원형(반원 제외)" + "칸 안 완전 포함"만 후보로 */
-function analyzeCandidates(mask, w, h){
+/* 마스크에서 원형 후보 찾기 (크기 영향 최소화: shape 중심) */
+function findBestCircle(maskInfo, w, h){
   const n = w*h;
-  const visited = new Uint8Array(n);
-  const stack = [];
+  nextVisStamp();
+
+  let best = null;
+  let second = null;
 
   const frameArea = n;
-  const MAX_AREA = Math.floor(frameArea * 0.35);
+  const minArea = Math.max(18, Math.floor(frameArea * 0.00025));  // 매우 작은 원도 허용
+  const maxArea = Math.floor(frameArea * 0.28);                  // 너무 큰 밝은 바닥 방지
 
-  // 최소 크기: 너무 작은 밝은 점(노이즈) 방지
-  const PASS = [
-    { minArea: Math.max(110, Math.floor(frameArea * 0.0012)), minDim: 8, minFill: 0.48, minCirc: 0.32, aspectLim: 1.9, minFillScore: 0.45 },
-    { minArea: Math.max(55,  Math.floor(frameArea * 0.0006)), minDim: 7, minFill: 0.43, minCirc: 0.28, aspectLim: 2.2, minFillScore: 0.40 }
-  ];
+  for(let i=0;i<n;i++){
+    if(!_mask[i]) continue;
+    if(wasVisited(i)) continue;
 
-  function scoreCandidate(area, shapeScore){
-    // 면적 영향 줄이고 원형도 영향 강화(배경 오검출 억제)
-    return Math.pow(area, 0.38) * Math.pow(0.12 + 0.88*shapeScore, 3.25);
-  }
+    let area=0;
+    let sumX=0, sumY=0;
+    let sumWS=0;
+    let minX=1e9, minY=1e9, maxX=-1e9, maxY=-1e9;
+    let border=0;
+    let touchesFrame=false;
+    let tooLarge=false;
 
-  function runPass(cfg){
-    let best = null;
+    let sp=0;
+    _stack[sp++]=i;
+    setVisited(i);
 
-    for(let i=0;i<n;i++){
-      if(!mask[i] || visited[i]) continue;
+    while(sp){
+      const idx = _stack[--sp];
+      const x = idx % w;
+      const y = (idx / w) | 0;
 
-      let area=0, sumX=0, sumY=0;
-      let minX=1e9, minY=1e9, maxX=-1e9, maxY=-1e9;
-      let touchesEdge=false;
-      let perimeter=0;
+      area++;
+      if(area > maxArea) tooLarge=true;
 
-      stack.length=0;
-      stack.push(i);
-      visited[i]=1;
+      sumX += x;
+      sumY += y;
+      sumWS += _bufWS[idx];
 
-      while(stack.length){
-        const idx = stack.pop();
-        const x = idx % w;
-        const y = (idx / w) | 0;
+      if(x<minX) minX=x;
+      if(y<minY) minY=y;
+      if(x>maxX) maxX=x;
+      if(y>maxY) maxY=y;
 
-        area++;
-        sumX += x;
-        sumY += y;
+      if(x===0 || y===0 || x===w-1 || y===h-1) touchesFrame=true;
 
-        if(x<minX) minX=x;
-        if(y<minY) minY=y;
-        if(x>maxX) maxX=x;
-        if(y>maxY) maxY=y;
-
-        if(x===0 || y===0 || x===w-1 || y===h-1) touchesEdge=true;
-
-        // 4-neighbor perimeter + flood
-        if(y===0 || !mask[idx-w]){
-          perimeter++;
-        }else{
-          const up = idx-w;
-          if(!visited[up]){ visited[up]=1; stack.push(up); }
-        }
-        if(y===h-1 || !mask[idx+w]){
-          perimeter++;
-        }else{
-          const dn = idx+w;
-          if(!visited[dn]){ visited[dn]=1; stack.push(dn); }
-        }
-        if(x===0 || !mask[idx-1]){
-          perimeter++;
-        }else{
-          const lf = idx-1;
-          if(!visited[lf]){ visited[lf]=1; stack.push(lf); }
-        }
-        if(x===w-1 || !mask[idx+1]){
-          perimeter++;
-        }else{
-          const rt = idx+1;
-          if(!visited[rt]){ visited[rt]=1; stack.push(rt); }
-        }
+      // 4-neighbor 연결 + border(둘레) 카운트
+      // up
+      if(y>0 && _mask[idx-w]){
+        const up=idx-w;
+        if(!wasVisited(up)){ setVisited(up); _stack[sp++]=up; }
+      }else{
+        border++;
       }
-
-      // ★ 반원/가장자리 잘림은 이제 "인식하지 않음"
-      if(touchesEdge) continue;
-
-      if(area < cfg.minArea || area > MAX_AREA) continue;
-
-      const bw = (maxX - minX + 1);
-      const bh = (maxY - minY + 1);
-      if(bw < cfg.minDim || bh < cfg.minDim) continue;
-
-      const aspect = bw / Math.max(1, bh);
-      if(aspect > cfg.aspectLim || aspect < 1/cfg.aspectLim) continue;
-
-      const fill = area / (bw * bh);
-      if(fill < cfg.minFill || fill > 0.98) continue;
-
-      if(perimeter < 10) continue;
-
-      let circularity = (4 * Math.PI * area) / (perimeter * perimeter);
-      if(!isFinite(circularity) || circularity < 0) circularity = 0;
-      if(circularity > 1.2) circularity = 1.2;
-
-      if(circularity < cfg.minCirc) continue;
-
-      // fill score: 원일 때 fill~0.785
-      const fillScoreFull = clamp01(1 - (Math.abs(fill - 0.785) / 0.785));
-      if(fillScoreFull < cfg.minFillScore) continue;
-
-      const aspectScore = clamp01(1 - (Math.abs(aspect - 1) / 0.85));
-      const circScore = clamp01((circularity - 0.20) / (0.92 - 0.20));
-
-      const shapeScore = clamp01(0.70*circScore + 0.20*fillScoreFull + 0.10*aspectScore);
-
-      // ★ "칸 안 완전 포함" 조건을 후보 단계에서 먼저 적용
-      const cell = containedCellFromBBox({minX,minY,maxX,maxY,area}, w, h);
-      if(!cell) continue;
-
-      const s = scoreCandidate(area, shapeScore);
-
-      if(!best || s > best.score){
-        best = {
-          area,
-          cx: (sumX / area),
-          cy: (sumY / area),
-          minX, minY, maxX, maxY,
-          bw, bh,
-          aspect, fill,
-          perimeter,
-          circularity,
-          shapeScore,
-          fillScoreFull,
-          score: s,
-          cell: cell
-        };
+      // down
+      if(y<h-1 && _mask[idx+w]){
+        const dn=idx+w;
+        if(!wasVisited(dn)){ setVisited(dn); _stack[sp++]=dn; }
+      }else{
+        border++;
+      }
+      // left
+      if(x>0 && _mask[idx-1]){
+        const lf=idx-1;
+        if(!wasVisited(lf)){ setVisited(lf); _stack[sp++]=lf; }
+      }else{
+        border++;
+      }
+      // right
+      if(x<w-1 && _mask[idx+1]){
+        const rt=idx+1;
+        if(!wasVisited(rt)){ setVisited(rt); _stack[sp++]=rt; }
+      }else{
+        border++;
       }
     }
 
-    return best;
-  }
+    if(tooLarge) continue;
+    if(touchesFrame) continue;
+    if(area < minArea) continue;
 
-  // pass1 → pass2
-  for(let pi=0; pi<PASS.length; pi++){
-    const r = runPass(PASS[pi]);
-    if(r){
-      r.pass = pi;
-      return r;
+    const bw = (maxX - minX + 1);
+    const bh = (maxY - minY + 1);
+    if(bw < 6 || bh < 6) continue;
+
+    const aspect = bw / Math.max(1, bh);
+    const aAbs = aspect >= 1 ? aspect : 1/aspect;
+    if(aAbs > 1.85) continue;
+
+    const fill = area / (bw * bh);
+    if(fill < 0.32 || fill > 0.97) continue;
+
+    if(border < 14) continue;
+
+    let circ = (4 * Math.PI * area) / (border * border);
+    if(!isFinite(circ) || circ < 0) circ = 0;
+    if(circ > 1.2) circ = 1.2;
+
+    const minCirc = (area < 80 ? 0.45 : 0.30);
+    if(circ < minCirc) continue;
+
+    // shape scores
+    const fillScore = clamp01(1 - (Math.abs(fill - 0.785) / 0.785));
+    const aspectScore = clamp01(1 - ((aAbs - 1) / 0.9));
+    const circScore = clamp01((circ - 0.20) / (0.95 - 0.20));
+
+    let shapeScore = clamp01(0.62*circScore + 0.25*fillScore + 0.13*aspectScore);
+
+    // whiteness(회색 포함): 평균 ws가 너무 낮으면 제외
+    const meanWS = sumWS / Math.max(1, area);
+    const whiteScore = clamp01((meanWS - (maskInfo.thrWS - 8)) / 70);
+
+    // 최종 점수: 크기 영향 거의 제거(원형도 중심), 흰/회색 계통만 약하게 반영
+    const score = shapeScore * (0.65 + 0.35*whiteScore);
+
+    if(score < 0.40) continue;
+
+    // ★ 9칸 중 "완전 포함"되는 칸만 인정
+    const cell = containedCellFromBBox({minX,minY,maxX,maxY,area}, w, h);
+    if(!cell) continue;
+
+    const cand = {
+      area, minX,minY,maxX,maxY, bw,bh,
+      cx: sumX/area, cy: sumY/area,
+      border, circ, fill, aAbs,
+      shapeScore, whiteScore,
+      score,
+      cell
+    };
+
+    if(!best || cand.score > best.score){
+      second = best;
+      best = cand;
+    }else if(!second || cand.score > second.score){
+      second = cand;
     }
   }
-  return null;
+
+  // 애매하면(서로 다른 칸, 점수차 작음) -> 미표시로 흔들림 감소
+  if(best && second && best.cell && second.cell && best.cell.num !== second.cell.num){
+    if((best.score - second.score) < 0.04){
+      // 면적이 확실히 크면 유지, 아니면 none
+      if(!(best.area >= second.area * 1.35)){
+        return null;
+      }
+    }
+  }
+
+  return best;
 }
 
-function computeBallConfidence(ball, w, h){
-  const frameArea = w*h;
-
-  const areaNorm = clamp01(ball.area / Math.max(1, frameArea * 0.020));
-  const sizeScore = clamp01(Math.sqrt(areaNorm));
-
-  const shapeScore = clamp01(ball.shapeScore || 0);
-  const fillScore  = clamp01(ball.fillScoreFull || 0);
-
-  // 완전 원형(흰색) 조건에서 shape 비중↑
-  let conf = 0.10
-           + 0.65*shapeScore
-           + 0.15*fillScore
-           + 0.15*sizeScore;
-
-  if(ball.pass === 1) conf -= 0.01;
-
-  return clamp01(conf) * 100;
-}
-
-/* 흰색 동그라미 인식 한 번 수행 (함수명 유지) */
+/* 동그라미 인식 한 번 수행 */
 async function runOcrOnVideo(video){
   if(!ocrReady) return {status:'not-ready'};
   if(!video || !video.videoWidth || !video.videoHeight) return {status:'no-frame'};
@@ -1988,9 +2037,11 @@ async function runOcrOnVideo(video){
     preprocessToOcrCanvas(video);
     const img = ocrCtx.getImageData(0,0, OCR_W, OCR_H);
 
-    // ★ 흰색 마스크 + 완전포함 후보만
-    const mask = buildCircleMask(img, OCR_W, OCR_H);
-    const ball = analyzeCandidates(mask, OCR_W, OCR_H);
+    // 흰/회색 계통 마스크
+    const mi = buildWhiteishMask(img, OCR_W, OCR_H);
+
+    // 원형 후보 선택
+    const ball = findBestCircle(mi, OCR_W, OCR_H);
 
     ocrBusy = false;
 
@@ -1998,16 +2049,15 @@ async function runOcrOnVideo(video){
       return {status:'not-in-cell'};
     }
 
-    const conf = computeBallConfidence(ball, OCR_W, OCR_H);
-    const pos = ball.cell; // {row,col,num,code}
+    const conf = clamp01(ball.shapeScore) * 100; // 이벤트는 원형도 기반으로
 
     return {
       status:'ok',
-      digit: pos.num + '번',   // UI 표시
+      digit: ball.cell.num + '번',
       conf: conf,
-      gesture: pos.code,      // 이벤트(기존 블록과 호환 유지)
-      zoneNum: pos.num,
-      cell: {row:pos.row, col:pos.col}
+      gesture: ball.cell.code,
+      zoneNum: ball.cell.num,
+      cell: {row: ball.cell.row, col: ball.cell.col}
     };
   }catch(e){
     ocrBusy = false;
@@ -2018,7 +2068,7 @@ async function runOcrOnVideo(video){
 function describeNoDigitReason(res){
   if(!res || typeof res.status!=='string') return '인식 실패';
   switch(res.status){
-    case 'not-in-cell': return '칸 안에 완전히 들어오지 않음(또는 완전 원형 아님)';
+    case 'not-in-cell': return '칸 안에 완전히 들어오지 않음(또는 원형/흰계통 아님)';
     case 'no-frame': return '카메라 프레임 없음';
     case 'not-ready': return '인식 준비중';
     case 'busy': return '이전 인식 처리중';
@@ -2027,7 +2077,7 @@ function describeNoDigitReason(res){
   }
 }
 
-/* 1초 파이프라인 */
+/* 0.5초 파이프라인 */
 let panelLastDetectTs = 0;
 let overlayLastDetectTs = 0;
 let lastStateKey = null;

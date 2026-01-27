@@ -155,9 +155,9 @@
   const DETECT_MS = 250;          // 처리 주기 (ms)
   const PROC_W = 360;             // 처리 해상도(가로). 낮출수록 빠름
   const HUE_BINS = 8;             // 색상 계열(빨/주/노/초/청/파/보 등) 분할 개수
-  const SAT_MIN_COLOR = 45;       // 이 값보다 채도가 낮으면 “무채색(흰/회색)”으로 취급
+  const SAT_MIN_COLOR = 25;       // 이 값보다 채도가 낮으면 “무채색(흰/회색)”으로 취급
   const VAL_MIN = 35;             // 너무 어두운 픽셀 제외(노이즈 감소)
-  const MIN_AREA_PX = 120;        // 너무 작은 blob 제외 (필요시 60~200 사이로 조절)
+  const MIN_AREA_PX = 60;        // 너무 작은 blob 제외 (필요시 60~200 사이로 조절)
 
   // 마스크 정리(노이즈 제거/구멍 메움)
   const MORPH_OPEN = 1;           // 1이면 열기 적용

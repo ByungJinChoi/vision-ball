@@ -154,8 +154,8 @@
   // ---- "단색 공" 필터 강도(필요하면 여기만 조정) ----
   const FILTER = {
     // 안쪽 vs (원 내부)테두리 색이 비슷해야 함
-    innerEdgeABMax: 18,     // Lab a,b 평균 차(작을수록 엄격)
-    innerEdgeLMax:  36,     // Lab L 평균 차
+    innerEdgeABMax: 50,     // Lab a,b 평균 차(작을수록 엄격)
+    innerEdgeLMax:  50,     // Lab L 평균 차
 
     // 내부가 단색에 가까워야 함(무늬/패턴 억제)
     innerChromaStdMax: 26,  // sqrt(stdA^2 + stdB^2)

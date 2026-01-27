@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8" />
-<title>XROBO BLE — 공 따라가기 (9분할 / 1초 주기)</title>
+<title>XROBO BLE — 공 따라가기 (9분할/번호표시 / 1초 주기)</title>
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
 <script src="https://unpkg.com/blockly/blockly.min.js"></script>
 <!-- Tesseract.js (원본 유지: 다른 기능 변경 금지 조건 충족) -->
@@ -70,7 +70,7 @@
   left:50%;
   transform:translateX(-50%);
   bottom:12px;
-  z-index:2;
+  z-index:3;
   display:inline-flex;
   align-items:center;
   gap:.55rem;
@@ -105,7 +105,6 @@
   }
 }
 
-/* 눈동자 애니메이션은 숨기고 구조 유지 */
 #eyesStage{display:none !important;}
 
   :root{
@@ -280,7 +279,7 @@
   #camVideo{
     width:100%;
     height:100%;
-    object-fit:contain; /* 라인과 영상 정렬 */
+    object-fit:contain;
     transform: scaleX(-1);
     background:#000;
   }
@@ -291,7 +290,7 @@
     display:flex;
     gap:8px;
     align-items:center;
-    z-index:3;
+    z-index:4;
   }
   .camBadge{
     font: 700 12px/1 system-ui;
@@ -307,23 +306,48 @@
   #focusBox{ display:none !important; }
   #ovFocusBox{ display:none !important; }
 
-  /* ===== 9분할(3x3) 라인 오버레이 ===== */
-  /* 숨기려면 opacity:0 으로 변경 */
+  /* ===== 9분할(3x3) 라인+번호 오버레이 ===== */
   .gridOverlay{
     position:absolute;
     left:0; top:0; width:100%; height:100%;
     pointer-events:none;
-    z-index:2;
+    z-index:3;
     opacity:1;
   }
   .gridOverlay .gridLine{
     position:absolute;
-    background: rgba(255,255,255,.9); /* 흰색 얇은 라인 */
+    background: rgba(255,255,255,.9);
   }
   .gridOverlay .v1{ left:33.3333%; top:0; width:1px; height:100%; transform: translateX(-0.5px); }
   .gridOverlay .v2{ left:66.6666%; top:0; width:1px; height:100%; transform: translateX(-0.5px); }
   .gridOverlay .h1{ top:33.3333%; left:0; height:1px; width:100%; transform: translateY(-0.5px); }
   .gridOverlay .h2{ top:66.6666%; left:0; height:1px; width:100%; transform: translateY(-0.5px); }
+
+  /* ★ 번호 표시 */
+  .gridOverlay .gridNum{
+    position:absolute;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    width: clamp(22px, 4.2vmin, 34px);
+    height: clamp(22px, 4.2vmin, 34px);
+    border-radius:999px;
+    font: 900 clamp(12px, 2.2vmin, 18px)/1 system-ui;
+    color: rgba(255,255,255,.95);
+    background: rgba(0,0,0,.25);
+    border: 1px solid rgba(255,255,255,.22);
+    text-shadow: 0 1px 2px rgba(0,0,0,.75);
+    transform: translate(-50%,-50%);
+  }
+  .gridOverlay .n1{ left:16.6667%; top:16.6667%; }
+  .gridOverlay .n2{ left:50.0000%; top:16.6667%; }
+  .gridOverlay .n3{ left:83.3333%; top:16.6667%; }
+  .gridOverlay .n4{ left:16.6667%; top:50.0000%; }
+  .gridOverlay .n5{ left:50.0000%; top:50.0000%; }
+  .gridOverlay .n6{ left:83.3333%; top:50.0000%; }
+  .gridOverlay .n7{ left:16.6667%; top:83.3333%; }
+  .gridOverlay .n8{ left:50.0000%; top:83.3333%; }
+  .gridOverlay .n9{ left:83.3333%; top:83.3333%; }
 
   /* 카메라 인식 읽기 배지(우측 패널) */
   #digitReadout{
@@ -331,7 +355,7 @@
     left:50%;
     transform:translateX(-50%);
     bottom:12px;
-    z-index:3;
+    z-index:4;
     display:inline-flex;
     align-items:center;
     gap:.55rem;
@@ -469,79 +493,6 @@
     gap:0;
     background:#000;
     height:100%;
-  }
-
-  /* 눈동자 UI 구조 유지 */
-  #eyesStage{
-    width:100%;
-    height:100%;
-    display:grid;
-    place-items:center;
-    background:#000;
-  }
-  .eyes{
-    display:grid;
-    grid-auto-flow:column;
-    align-items:center;
-    gap: var(--eyesGap);
-  }
-  .eye{
-    position:relative;
-    width:var(--eyeSize);
-    height:var(--eyeSize);
-    border-radius: 50%;
-    overflow:hidden;
-    background: radial-gradient(ellipse at 40% 40%, #fff 0 70%, #e9e9e9 100%);
-    box-shadow: 0 1.2vmin 3vmin rgba(0,0,0,.45),
-                inset 0 -0.8vmin 1.6vmin rgba(0,0,0,.12);
-  }
-  .pupil{
-    position:absolute;
-    width:var(--pupilSize);
-    height:var(--pupilSize);
-    border-radius:50%;
-    background: radial-gradient(circle at 40% 35%, #222 0 45%, #000 70%, #000 100%);
-    left:50%;
-    top:50%;
-    transform:translate(-50%,-50%);
-    will-change: transform;
-  }
-  .shine{
-    position:absolute;
-    width: calc(var(--pupilSize)*.35);
-    height: calc(var(--pupilSize)*.35);
-    border-radius:50%;
-    background: rgba(255,255,255,.85);
-    left:25%;
-    top:22%;
-    filter: blur(0.2vmin);
-  }
-  .shine::after{
-    content:"";
-    position:absolute;
-    width:55%;
-    height:55%;
-    left:150%;
-    top:130%;
-    border-radius:50%;
-    background: rgba(255,255,255,.4);
-    filter: blur(0.25vmin);
-  }
-  .eyelid{
-    position:absolute;
-    inset:0;
-    background:#000;
-    transform-origin:top center;
-    transform:scaleY(0);
-    pointer-events:none;
-  }
-  .blink .eyelid{
-    animation: blink var(--blinkSpeed) ease-in-out forwards;
-  }
-  @keyframes blink{
-    0%{transform:scaleY(0)}
-    45%{transform:scaleY(1)}
-    100%{transform:scaleY(0)}
   }
 
   /* === 파일 드롭다운 === */
@@ -715,12 +666,22 @@
         <div class="camWrap" id="camWrap">
           <video id="camVideo" playsinline autoplay muted></video>
 
-          <!-- ★ 9분할 라인(패널) -->
+          <!-- ★ 9분할 라인+번호(패널) -->
           <div id="gridOverlayPanel" class="gridOverlay" aria-hidden="true">
             <div class="gridLine v1"></div>
             <div class="gridLine v2"></div>
             <div class="gridLine h1"></div>
             <div class="gridLine h2"></div>
+
+            <div class="gridNum n1">1</div>
+            <div class="gridNum n2">2</div>
+            <div class="gridNum n3">3</div>
+            <div class="gridNum n4">4</div>
+            <div class="gridNum n5">5</div>
+            <div class="gridNum n6">6</div>
+            <div class="gridNum n7">7</div>
+            <div class="gridNum n8">8</div>
+            <div class="gridNum n9">9</div>
           </div>
 
           <!-- (기존 ROI 사각형은 숨김 처리됨) -->
@@ -791,12 +752,22 @@
       <div id="ovCamWrap">
         <video id="eyesCam" playsinline muted autoplay></video>
 
-        <!-- ★ 9분할 라인(전체화면) -->
+        <!-- ★ 9분할 라인+번호(전체화면) -->
         <div id="gridOverlayOverlay" class="gridOverlay" aria-hidden="true">
           <div class="gridLine v1"></div>
           <div class="gridLine v2"></div>
           <div class="gridLine h1"></div>
           <div class="gridLine h2"></div>
+
+          <div class="gridNum n1">1</div>
+          <div class="gridNum n2">2</div>
+          <div class="gridNum n3">3</div>
+          <div class="gridNum n4">4</div>
+          <div class="gridNum n5">5</div>
+          <div class="gridNum n6">6</div>
+          <div class="gridNum n7">7</div>
+          <div class="gridNum n8">8</div>
+          <div class="gridNum n9">9</div>
         </div>
 
         <!-- (기존 ROI 사각형은 숨김 처리됨) -->
@@ -896,6 +867,7 @@ var LED_MODE=[["밝기","BRIGHT"],["숨쉬기","BREATHE"]];
 var LED_VALS=Array.from({length:20},(_,i)=>[String(i),String(i)]);
 
 /* ================= 블록 정의 ================= */
+/* ★ 이벤트 블록(여기는 수정하지 않음) ★ */
 const DIGIT_OPTIONS = [
   ["멀리 왼쪽","B_FAR_LEFT"],
   ["멀리 있음","B_FAR"],
@@ -1416,7 +1388,7 @@ async function processQueue(localToken){
   }
 }
 
-/* 공 위치 이벤트 코드 → 한글 라벨 */
+/* (이벤트/블록 동작은 유지) */
 function eventLabelFromCode(code){
   switch(code){
     case 'B_FAR_LEFT':   return '멀리 왼쪽';
@@ -1432,12 +1404,11 @@ function eventLabelFromCode(code){
   }
 }
 
-/* 이벤트 실행 + 로그 */
 function triggerEvent(name, conf, source){
-  var label = eventLabelFromCode(name);
+  var digitLabel = eventLabelFromCode(name);
 
   if(!isRunning){
-    log(`⏸ 실행 중이 아니라 이벤트를 실행하지 않습니다. (${label})`);
+    log(`⏸ 실행 중이 아니라 이벤트를 실행하지 않습니다. (${digitLabel})`);
     return;
   }
 
@@ -1446,14 +1417,14 @@ function triggerEvent(name, conf, source){
   }
   var seq = eventPrograms[name];
   if(!seq || !seq.length){
-    log(`⚠️ 이벤트 ${label} 에 연결된 블록이 없습니다.`);
+    log(`⚠️ 이벤트 ${digitLabel} 에 연결된 블록이 없습니다.`);
     return;
   }
 
   if(typeof conf === 'number'){
-    log(`③ 이벤트 ${label} 실행 (${seq.length}개 명령, ${conf.toFixed(1)}%)`);
+    log(`③ 이벤트 ${digitLabel} 실행 (${seq.length}개 명령, ${conf.toFixed(1)}%)`);
   }else{
-    log(`③ 이벤트 ${label} 실행 (${seq.length}개 명령)`);
+    log(`③ 이벤트 ${digitLabel} 실행 (${seq.length}개 명령)`);
   }
 
   queue.push({list: seq.slice()});
@@ -1467,6 +1438,7 @@ function startTest(){
   eventPrograms = buildEventPrograms();
   cancelToken++;
   queue = [];
+  isFullscreenRun = false;
   setRunning(true);
 }
 
@@ -1547,9 +1519,6 @@ const digitValEl = digitReadout.querySelector('.value');
 const gridOverlayPanel = document.getElementById('gridOverlayPanel');
 const gridOverlayOverlay = document.getElementById('gridOverlayOverlay');
 
-/* 공용 파라미터 */
-const LOW_W = 64, LOW_H = 48;
-
 /* 공 인식 캔버스 (작은 공 개선: 해상도 상승) */
 const OCR_W = 320, OCR_H = 240;
 /* 1초 간격 */
@@ -1563,17 +1532,10 @@ const COLOR_TOLERANCE = 24;
 
 let camStream = null, camOn = false, camRAF = null;
 
-const procCvs = document.createElement('canvas');
-const procCtx = procCvs.getContext('2d', { willReadFrequently:true });
-procCvs.width = LOW_W;
-procCvs.height = LOW_H;
-
 const ocrCvs = document.createElement('canvas');
 const ocrCtx = ocrCvs.getContext('2d', { willReadFrequently:true });
 ocrCvs.width = OCR_W;
 ocrCvs.height = OCR_H;
-
-function toGray(r,g,b){ return (r*0.299 + g*0.587 + b*0.114)|0; }
 
 /* UI */
 function setCamBadge(t){ camBadge.textContent = 'Cam: ' + t; }
@@ -1585,7 +1547,7 @@ function updateDigitReadout(v){
   digitValEl.textContent = (v==null ? '—' : String(v));
 }
 
-/* ★ object-fit: contain 상태에서 실제 영상이 그려지는 사각영역 계산 → 라인 위치를 영상에 맞춤 */
+/* object-fit: contain 상태에서 실제 영상 표시 영역에 맞춰 grid 오버레이 정렬 */
 function syncGridOverlayToVideo(videoEl, wrapEl, gridEl){
   try{
     if(!gridEl || !wrapEl || !videoEl) return;
@@ -1713,12 +1675,11 @@ function otsuThreshold(hist, total){
 
 function clamp01(v){ return Math.max(0, Math.min(1, v)); }
 
-/* saliency 기반 마스크: 색상 무관 + (개선) 경계(gradient) 성분 추가 */
+/* saliency 기반 마스크: 색상 무관 + 경계(gradient) 성분 반영 */
 function buildCircleMask(img, w, h){
   const d = img.data;
   const n = w*h;
 
-  // 1) grayscale + mean
   const yArr = new Uint8Array(n);
   let sumY = 0;
   for(let i=0,p=0;i<n;i++,p+=4){
@@ -1729,7 +1690,6 @@ function buildCircleMask(img, w, h){
   }
   const meanY = sumY / Math.max(1,n);
 
-  // 2) saliency + histogram
   const sal = new Uint8Array(n);
   const hist = new Uint32Array(256);
 
@@ -1746,7 +1706,6 @@ function buildCircleMask(img, w, h){
       const yy = yArr[i];
       const dy = Math.abs(yy - meanY);
 
-      // (개선) 간단 gradient (경계)
       let grad = 0;
       if(x>0 && x<w-1 && y>0 && y<h-1){
         const gx = (yArr[i+1] - yArr[i-1]);
@@ -1754,7 +1713,7 @@ function buildCircleMask(img, w, h){
         grad = Math.abs(gx) + Math.abs(gy);
         if(grad > 255) grad = 255;
       }
-      const gScore = grad * 0.60; // 너무 강하면 배경 엣지에 묻힘 → 가중치 절제
+      const gScore = grad * 0.60;
 
       let s = dy;
       if(diff > s) s = diff;
@@ -1767,7 +1726,6 @@ function buildCircleMask(img, w, h){
     }
   }
 
-  // 3) threshold
   let thr = otsuThreshold(hist, n);
   thr = Math.max(18, thr);
 
@@ -1779,7 +1737,6 @@ function buildCircleMask(img, w, h){
     }
   }
 
-  // 너무 많이 잡히면 기준을 올림 (복잡 배경 억제)
   if(cnt > n * 0.40){
     thr = Math.min(255, thr + 18);
     cnt = 0;
@@ -1791,7 +1748,6 @@ function buildCircleMask(img, w, h){
     }
   }
 
-  // 4) dilation (1회)
   const dil = new Uint8Array(n);
   for(let y=0;y<h;y++){
     for(let x=0;x<w;x++){
@@ -1806,7 +1762,6 @@ function buildCircleMask(img, w, h){
     }
   }
 
-  // 5) 간단 노이즈 제거
   const out = dil.slice();
   for(let y=1;y<h-1;y++){
     for(let x=1;x<w-1;x++){
@@ -1824,14 +1779,13 @@ function buildCircleMask(img, w, h){
   return out;
 }
 
-/* 연결요소 분석 → (개선) 원형도(circularity) 강화 + (개선) 작은 공 2-pass + (개선) 가장자리 보정 */
+/* 연결요소 분석 → 원형도(circularity) 강화 + 작은 공 2-pass + 가장자리 보정 */
 function analyzeCandidates(mask, w, h){
   const n = w*h;
   const frameArea = n;
   const MAX_AREA = Math.floor(frameArea * 0.55);
 
   const passes = [
-    // pass0: 기본 탐색
     {
       minArea: Math.max(42, Math.floor(frameArea * 0.00095)),
       minDim: 8,
@@ -1845,7 +1799,6 @@ function analyzeCandidates(mask, w, h){
       circLoEdge: 0.10,
       circHi: 0.92
     },
-    // pass1: 작은 공(멀리) 탐색 — minArea 낮추되 원형도 조건 조금 강화
     {
       minArea: Math.max(18, Math.floor(frameArea * 0.00035)),
       minDim: 6,
@@ -1872,7 +1825,7 @@ function analyzeCandidates(mask, w, h){
       let area=0, sumX=0, sumY=0;
       let minX=1e9, minY=1e9, maxX=-1e9, maxY=-1e9;
       let touchesEdge=false;
-      let perimeter=0; // (개선) boundary edge count 기반 perimeter
+      let perimeter=0;
 
       stack.length=0;
       stack.push(i);
@@ -1894,28 +1847,24 @@ function analyzeCandidates(mask, w, h){
 
         if(x===0 || y===0 || x===w-1 || y===h-1) touchesEdge=true;
 
-        // up
         if(y===0 || !mask[idx-w]){
           perimeter++;
         }else{
           const up = idx-w;
           if(!visited[up]){ visited[up]=1; stack.push(up); }
         }
-        // down
         if(y===h-1 || !mask[idx+w]){
           perimeter++;
         }else{
           const dn = idx+w;
           if(!visited[dn]){ visited[dn]=1; stack.push(dn); }
         }
-        // left
         if(x===0 || !mask[idx-1]){
           perimeter++;
         }else{
           const lf = idx-1;
           if(!visited[lf]){ visited[lf]=1; stack.push(lf); }
         }
-        // right
         if(x===w-1 || !mask[idx+1]){
           perimeter++;
         }else{
@@ -1936,13 +1885,11 @@ function analyzeCandidates(mask, w, h){
       if(aspect > aspectLim || aspect < 1/aspectLim) continue;
 
       const fill = area / (bw * bh);
-
       const minFill = touchesEdge ? pcfg.minFillEdge : pcfg.minFill;
       if(fill < minFill || fill > 0.98) continue;
 
       if(perimeter < 8) continue;
 
-      // (개선) circularity
       let circularity = (4 * Math.PI * area) / (perimeter * perimeter);
       if(!isFinite(circularity) || circularity < 0) circularity = 0;
       if(circularity > 1.2) circularity = 1.2;
@@ -1950,37 +1897,30 @@ function analyzeCandidates(mask, w, h){
       const minCirc = touchesEdge ? pcfg.minCircEdge : pcfg.minCirc;
       if(circularity < minCirc) continue;
 
-      // fill scores (원/반원)
       const fillScoreFull = clamp01(1 - (Math.abs(fill - 0.785) / 0.785));
       const fillScoreHalf = clamp01(1 - (Math.abs(fill - 0.392) / 0.392));
       const fillScore = touchesEdge
         ? Math.max(fillScoreHalf, fillScoreFull * 0.85)
         : Math.max(fillScoreFull, fillScoreHalf * 0.70);
 
-      // aspect score
       const aspectDen = touchesEdge ? 1.60 : 1.20;
       const aspectScore = clamp01(1 - (Math.abs(aspect - 1) / aspectDen));
 
-      // circularity score (강하게)
       const cLo = touchesEdge ? pcfg.circLoEdge : pcfg.circLo;
       const cHi = pcfg.circHi;
       const circScore = clamp01((circularity - cLo) / Math.max(1e-6, (cHi - cLo)));
 
-      // (개선) shapeScore에서 원형도 비중 강화
       let shapeScore = touchesEdge
         ? (0.45*circScore + 0.30*fillScore + 0.25*aspectScore)
         : (0.55*circScore + 0.25*fillScore + 0.20*aspectScore);
 
-      // (개선) 반원(가장자리) 보정: 반원 fill이 잘 맞으면 가산
       if(touchesEdge && fillScoreHalf > fillScoreFull){
         shapeScore = Math.min(1, shapeScore + 0.06);
       }
-      // (보너스) 완전원 쪽이 더 맞으면 약간 가산
       if(!touchesEdge && fillScoreFull > fillScoreHalf){
         shapeScore = Math.min(1, shapeScore + 0.03);
       }
 
-      // (개선) score에서 area 영향 완화 + shape 영향 강화 → 작은 공도 살아남게
       const score = Math.pow(area, 0.72) * Math.pow(0.20 + 0.80*shapeScore, 2.25);
 
       cand.push({
@@ -2006,7 +1946,6 @@ function analyzeCandidates(mask, w, h){
     const best = cand[0];
     const bestNonEdge = cand.find(c=>!c.touchesEdge) || null;
 
-    // (개선) edge 후보를 “너무 쉽게” 버리지 않도록 조건 강화
     if(bestNonEdge && best.touchesEdge){
       const ratio = bestNonEdge.score / Math.max(1e-9, best.score);
       if(ratio >= 0.92 && bestNonEdge.shapeScore >= best.shapeScore * 0.94){
@@ -2016,7 +1955,6 @@ function analyzeCandidates(mask, w, h){
     return best;
   }
 
-  // (개선) 2-pass: 기본 탐색 실패하면 작은 공 탐색 자동 실행
   for(let pi=0; pi<passes.length; pi++){
     const r = runPass(passes[pi]);
     if(r){
@@ -2030,24 +1968,20 @@ function analyzeCandidates(mask, w, h){
 function computeBallConfidence(ball, w, h){
   const frameArea = w*h;
 
-  const areaNorm = clamp01(ball.area / Math.max(1, frameArea * 0.03)); // 3%에서 포화
+  const areaNorm = clamp01(ball.area / Math.max(1, frameArea * 0.03));
   const sizeScore = clamp01(Math.sqrt(areaNorm));
 
   const shapeScore = clamp01(ball.shapeScore || 0);
   const circScore  = clamp01(ball.circScore || clamp01((ball.circularity - 0.10) / (0.92 - 0.10)));
 
-  // (개선) 원형도/shape 비중 강화 + edge 감점 제거
   let conf = 0.08
            + 0.60*shapeScore
            + 0.18*circScore
            + 0.20*sizeScore;
 
-  // (개선) 가장자리(반원)일 때 보정: 반원 fill 점수가 좋으면 약간 가산
   if(ball.touchesEdge){
     conf += 0.03 * clamp01(ball.fillScoreHalf || 0);
   }
-
-  // pass1(작은 공 탐색) 결과는 노이즈 가능성이 있으니 아주 미세하게만 보정(거의 영향 없음)
   if(ball.pass === 1){
     conf -= 0.01;
   }
@@ -2055,28 +1989,73 @@ function computeBallConfidence(ball, w, h){
   return clamp01(conf) * 100;
 }
 
-/* ★ 9분할(3x3) 분류 */
-function classifyGrid9(ball, w, h){
-  const cxN = (ball.cx + 0.5) / w;
-  const cyN = (ball.cy + 0.5) / h;
+/* ★ 9분할 번호: "가장 가까운 번호(셀 중심점)" 기준으로 선택 */
+function classifyGrid9Number(ball, w, h){
+  // 1) 기본 중심점(centroid)
+  let cx = ball.cx;
+  let cy = ball.cy;
 
-  const col = Math.max(0, Math.min(2, Math.floor(cxN * 3)));
-  const row = Math.max(0, Math.min(2, Math.floor(cyN * 3)));
+  // 2) bbox 중심과 혼합(노이즈/비대칭 보정)
+  const bx = (ball.minX + ball.maxX) * 0.5;
+  const by = (ball.minY + ball.maxY) * 0.5;
+  const mix = ball.touchesEdge ? 0.42 : 0.25;
+  cx = (1-mix)*cx + mix*bx;
+  cy = (1-mix)*cy + mix*by;
 
-  const idx = row*3 + col;
+  // 3) 반원/가장자리일 가능성이 높으면, 감지된 쪽 가장자리로 살짝 당김(구역 판정 안정화)
+  const fHalf = (ball.fillScoreHalf || 0);
+  const fFull = (ball.fillScoreFull || 0);
+  const likelyHalf = ball.touchesEdge && (fHalf >= fFull * 0.95) && (fHalf > 0.25);
 
-  switch(idx){
-    case 0: return {code:'B_FAR_LEFT',   label:'멀리 왼쪽',   cxN, cyN, row, col};
-    case 1: return {code:'B_FAR',        label:'멀리 있음',   cxN, cyN, row, col};
-    case 2: return {code:'B_FAR_RIGHT',  label:'멀리 오른쪽', cxN, cyN, row, col};
-    case 3: return {code:'B_LEFT',       label:'왼쪽에 있음', cxN, cyN, row, col};
-    case 4: return {code:'B_CENTER',     label:'중심에 있음', cxN, cyN, row, col};
-    case 5: return {code:'B_RIGHT',      label:'오른쪽에 있음', cxN, cyN, row, col};
-    case 6: return {code:'B_LEFT_NEAR',  label:'왼쪽 가까이', cxN, cyN, row, col};
-    case 7: return {code:'B_NEAR',       label:'가까이 있음', cxN, cyN, row, col};
-    case 8: return {code:'B_RIGHT_NEAR', label:'오른쪽 가까이', cxN, cyN, row, col};
-    default: return {code:'B_CENTER', label:'중심에 있음', cxN, cyN, row, col};
+  if(likelyHalf){
+    const sx = 0.22 * (ball.bw || 0);
+    const sy = 0.22 * (ball.bh || 0);
+    if(ball.minX === 0 && ball.maxX < w-1) cx -= sx;
+    if(ball.maxX === w-1 && ball.minX > 0) cx += sx;
+    if(ball.minY === 0 && ball.maxY < h-1) cy -= sy;
+    if(ball.maxY === h-1 && ball.minY > 0) cy += sy;
   }
+
+  cx = Math.max(0, Math.min(w-1, cx));
+  cy = Math.max(0, Math.min(h-1, cy));
+
+  const cxN = (cx + 0.5) / w;
+  const cyN = (cy + 0.5) / h;
+
+  // 셀 중심점(1~9)
+  const centers = [
+    {num:1, row:0, col:0, x:1/6, y:1/6, code:'B_FAR_LEFT'},
+    {num:2, row:0, col:1, x:3/6, y:1/6, code:'B_FAR'},
+    {num:3, row:0, col:2, x:5/6, y:1/6, code:'B_FAR_RIGHT'},
+    {num:4, row:1, col:0, x:1/6, y:3/6, code:'B_LEFT'},
+    {num:5, row:1, col:1, x:3/6, y:3/6, code:'B_CENTER'},
+    {num:6, row:1, col:2, x:5/6, y:3/6, code:'B_RIGHT'},
+    {num:7, row:2, col:0, x:1/6, y:5/6, code:'B_LEFT_NEAR'},
+    {num:8, row:2, col:1, x:3/6, y:5/6, code:'B_NEAR'},
+    {num:9, row:2, col:2, x:5/6, y:5/6, code:'B_RIGHT_NEAR'}
+  ];
+
+  let best = centers[0];
+  let bestD = 1e9;
+  for(let i=0;i<centers.length;i++){
+    const c = centers[i];
+    const dx = cxN - c.x;
+    const dy = cyN - c.y;
+    const d2 = dx*dx + dy*dy;
+    if(d2 < bestD){
+      bestD = d2;
+      best = c;
+    }
+  }
+
+  return {
+    num: best.num,
+    label: best.num + '번',
+    code: best.code,
+    row: best.row,
+    col: best.col,
+    cxN, cyN
+  };
 }
 
 /* 공(원형) 인식 한 번 수행 (함수명 runOcrOnVideo 유지) */
@@ -2100,13 +2079,16 @@ async function runOcrOnVideo(video){
     }
 
     const conf = computeBallConfidence(ball, OCR_W, OCR_H);
-    const pos = classifyGrid9(ball, OCR_W, OCR_H);
+
+    // ★ 번호 기반 분류
+    const pos = classifyGrid9Number(ball, OCR_W, OCR_H);
 
     return {
       status:'ok',
-      digit: pos.label,
+      digit: pos.label,     // UI 표시: "2번"
       conf: conf,
-      gesture: pos.code,
+      gesture: pos.code,    // 이벤트(기존 블록과 호환 유지)
+      zoneNum: pos.num,     // 디버그용
       cell: {row:pos.row, col:pos.col},
       ball: { cx:pos.cxN, cy:pos.cyN, edge:ball.touchesEdge, pass: ball.pass }
     };
@@ -2145,7 +2127,8 @@ function handleDigitPipeline(res, source){
   if(res.status !== 'ok' || !res.gesture){
     currentKey = 'NONE';
   }else{
-    currentKey = String(res.gesture);
+    // 번호가 바뀌면 바뀐 것으로 판단(더 직관적)
+    currentKey = String(res.zoneNum || res.gesture);
   }
 
   if(currentKey === lastStateKey){
@@ -2162,7 +2145,7 @@ function handleDigitPipeline(res, source){
     return;
   }
 
-  const label = (res.digit != null ? String(res.digit) : eventLabelFromCode(res.gesture));
+  const label = (res.digit != null ? String(res.digit) : '—'); // "2번"
   const conf  = typeof res.conf === 'number' ? res.conf : 0;
 
   if(source === 'panel'){
@@ -2215,62 +2198,13 @@ const overlayDigitBadge = document.getElementById('overlayDigitBadge');
 const overlayDigitVal   = overlayDigitBadge.querySelector('.value');
 const eyesCam = document.getElementById('eyesCam');
 
-const ovEyes   = [...document.querySelectorAll('#playOverlay .eye')];
-const ovPupils = [...document.querySelectorAll('#playOverlay .pupil')];
-
 let eyesRAF = null;
 let overlayBlinkTimer = null;
-
-let ovCurrent = {x:0, y:0};
-let ovTarget  = {x:0, y:0};
-
-function scheduleOverlayBlink(){
-  clearTimeout(overlayBlinkTimer);
-  const t = 2200 + Math.random()*3300;
-  overlayBlinkTimer = setTimeout(()=>{
-    ovEyes.forEach(e=>{
-      e.classList.add('blink');
-      setTimeout(()=> e.classList.remove('blink'),
-        parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--blinkSpeed')) + 40);
-    });
-    scheduleOverlayBlink();
-  }, t);
-}
-
-function renderPupils(nx, ny){
-  ovEyes.forEach((eye, i) => {
-    const rect = eye.getBoundingClientRect();
-    const rEye = Math.min(rect.width, rect.height)/2;
-    const limit = rEye * 0.32;
-    let dx = nx * limit, dy = ny * limit;
-    const dist = Math.hypot(dx,dy);
-    if (dist>limit){
-      const r = limit/dist;
-      dx*=r; dy*=r;
-    }
-    ovPupils[i].style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-  });
-}
 
 function overlayShowDigit(d){
   if(!overlayDigitBadge) return;
   overlayDigitVal.textContent = (d==null || d==='') ? '—' : String(d);
   overlayDigitBadge.style.display = 'inline-flex';
-}
-
-let overlayPointerIdleTimer = null;
-function setOverlayTarget(nx,ny){
-  ovTarget.x = Math.max(-1, Math.min(1,nx));
-  ovTarget.y = Math.max(-1, Math.min(1,ny));
-}
-function handleOverlayPointer(e){
-  const pt = ('touches' in e && e.touches[0]) ? e.touches[0] : e;
-  const cx = innerWidth/2, cy = innerHeight/2;
-  const dx = pt.clientX - cx, dy = pt.clientY - cy;
-  const d = Math.hypot(innerWidth, innerHeight) || 1;
-  setOverlayTarget(dx/(d*0.25), dy/(d*0.25));
-  clearTimeout(overlayPointerIdleTimer);
-  overlayPointerIdleTimer = setTimeout(()=> { setOverlayTarget(0,0); }, 900);
 }
 
 let lastTap=0;
@@ -2298,9 +2232,6 @@ async function startOverlayEyes(){
     }
   }catch(e){}
 
-  scheduleOverlayBlink();
-  overlayEl.addEventListener('pointermove', handleOverlayPointer);
-  overlayEl.addEventListener('pointerdown', handleOverlayPointer);
   overlayEl.addEventListener('pointerdown', onOverlayPointerDown);
   overlayEl.addEventListener('dblclick', onOverlayDblClick);
 
@@ -2324,15 +2255,11 @@ async function startOverlayEyes(){
       handleDigitPipeline(res, 'overlay');
 
       if(res && res.status==='ok' && res.digit!=null){
-        overlayShowDigit(res.digit);
+        overlayShowDigit(res.digit); // "2번"
       }else{
         overlayShowDigit(null);
       }
     }
-
-    ovCurrent.x += (ovTarget.x - ovCurrent.x) * 0.08;
-    ovCurrent.y += (ovTarget.y - ovCurrent.y) * 0.08;
-    renderPupils(ovCurrent.x, ovCurrent.y);
 
     eyesRAF = requestAnimationFrame(loop);
   };
@@ -2343,11 +2270,11 @@ function stopOverlayEyes(){
   if(eyesRAF){ cancelAnimationFrame(eyesRAF); eyesRAF=null; }
   overlayShowDigit(null);
   clearTimeout(overlayBlinkTimer);
-  overlayEl.removeEventListener('pointermove', handleOverlayPointer);
-  overlayEl.removeEventListener('pointerdown', handleOverlayPointer);
   overlayEl.removeEventListener('pointerdown', onOverlayPointerDown);
   overlayEl.removeEventListener('dblclick', onOverlayDblClick);
 }
+
+/* ================= 끝: 메인 스크립트 ================= */
 </script>
 
 <!-- 좌우 슬라이더 / 파일 메뉴 -->
@@ -2500,7 +2427,6 @@ function stopOverlayEyes(){
 <script id="xrobo-kp4x4-v14-script">
 (function(){
   if(!/Android/i.test(navigator.userAgent||'')) { return; }
-
   'use strict';
   const isAndroid = /Android/i.test(navigator.userAgent||'');
   if(!isAndroid){ return; }
@@ -2666,18 +2592,6 @@ function stopOverlayEyes(){
     pad.style.top = top + 'px';
   }
   function positionNearInput(input){ positionNearRect(input.getBoundingClientRect()); }
-  function positionNearPoint(x,y){ positionNearRect({left:x, right:x, top:y, bottom:y, width:0, height:0}); }
-  function positionNearField(field){
-    try{
-      const root = field && field.getClickTarget_ ? field.getClickTarget_() :
-                   (field && field.getSvgRoot && field.getSvgRoot());
-      if(root && root.getBoundingClientRect){
-        positionNearRect(root.getBoundingClientRect());
-        return true;
-      }
-    }catch(_){}
-    return false;
-  }
 
   function startFollowInput(input){
     cancelAnimationFrame(rafId);
@@ -2757,188 +2671,21 @@ function stopOverlayEyes(){
     hidePad();
   }
 
-  function findBlocklyInput(){
-    try{
-      if(window.Blockly){
-        if(Blockly.FieldTextInput && Blockly.FieldTextInput.htmlInput_){
-          return Blockly.FieldTextInput.htmlInput_;
-        }
-        if(Blockly.WidgetDiv && Blockly.WidgetDiv.DIV){
-          const el = Blockly.WidgetDiv.DIV.querySelector('input,textarea');
-          if(el) return el;
-        }
-      }
-      const q = document.querySelector('.blocklyHtmlInput, .blocklyHtmlTextInput, input.blocklyHtmlInput');
-      if(q) return q;
-    }catch(_){}
-    return null;
-  }
-
-  function setupInputPlatform(input){
-    if(isAndroid){
-      input.setAttribute('readonly', 'readonly');
-      input.setAttribute('inputmode','none');
-      input.addEventListener('touchstart', ev=>{
-        ev.preventDefault();
-        ev.stopPropagation();
-      }, {capture:true, passive:false});
-      setTimeout(()=>{ try{ input.blur(); }catch(_){ } }, 0);
-    }else{
-      input.removeAttribute('readonly');
-      input.setAttribute('inputmode','numeric');
-      try{ input.focus(); }catch(_){}
-      input.addEventListener('keydown', function(e){
-        if(e.key==='Enter'){ e.preventDefault(); commit(); }
-        else if(e.key==='Escape'){ e.preventDefault(); cancel(); }
-      }, {once:true, capture:true});
-    }
-    input.setAttribute('pattern','[0-9+\\-*/]*');
-    input.setAttribute('autocomplete','off');
-    input.setAttribute('autocorrect','off');
-    input.setAttribute('autocapitalize','off');
-    input.setAttribute('spellcheck','false');
-  }
-
-  function openForInput(input, field){
-    activeInput = input;
-    activeField = field || null;
-    promptCallback = null;
-    setupInputPlatform(input);
-    buffer = String(input.value||'');
-    showPad();
-    positionNearInput(input);
-    startFollowInput(input);
-    sync();
-  }
-
-  function openForField(field){
-    activeField = field || null;
-    activeInput = null;
-    promptCallback = null;
-    buffer = (field && typeof field.getValue==='function') ? String(field.getValue()||'') : '';
-    showPad();
-    if(!positionNearField(field)){
-      positionNearPoint(lastAnchor.x, lastAnchor.y);
-    }
-    sync();
-  }
-
-  function openForPrompt(defVal, anchor){
-    activeInput = null;
-    activeField = null;
-    buffer = String(defVal||'');
-    showPad();
-    positionNearPoint(anchor.x, anchor.y);
-    sync();
-  }
-
-  function afterEditorOpened(field){
-    const adopt = ()=>{
-      const input = findBlocklyInput();
-      if(input){
-        if(!pad || !pad.classList.contains('show')) showPad();
-        openForInput(input, field);
-        return true;
-      }
-      return false;
-    };
-    if(adopt()) return;
-    openForField(field);
-    let tries = 0;
-    const iv=setInterval(()=>{
-      if(adopt() || ++tries>8) clearInterval(iv);
-    },50);
-  }
-
-  function patchFieldNumber(){
-    try{
-      if(!window.Blockly || !Blockly.FieldNumber || Blockly.FieldNumber.__xrobo_v14) return;
-      function wrap(name){
-        const orig = Blockly.FieldNumber.prototype[name];
-        if(!orig) return false;
-        Blockly.FieldNumber.prototype[name] = function(){
-          const rv = orig.apply(this, arguments);
-          const self = this;
-          setTimeout(()=> afterEditorOpened(self), 0);
-          return rv;
-        };
-        return true;
-      }
-      wrap('showEditor_') || wrap('showEditor');
-      Blockly.FieldNumber.__xrobo_v14 = true;
-    }catch(_){}
-  }
-
-  function patchFieldTextInput(){
-    try{
-      if(!window.Blockly || !Blockly.FieldTextInput || Blockly.FieldTextInput.__xrobo_v14) return;
-      const proto = Blockly.FieldTextInput.prototype;
-      const origShow = proto.showEditor_;
-      proto.showEditor_ = function(opt_e){
-        const rv = origShow ? origShow.apply(this, arguments) : undefined;
-        if((typeof Blockly.FieldNumber!=='undefined') && (this instanceof Blockly.FieldNumber)){
-          const self = this;
-          setTimeout(()=> afterEditorOpened(self), 0);
-        }
-        return rv;
-      };
-      Blockly.FieldTextInput.__xrobo_v14 = true;
-    }catch(_){}
-  }
-
-  function patchPrompt(){
-    try{
-      if(!window.Blockly) return;
-      const numLike = v => /^[\s]*[+\-]?\d+(?:[\s]*[+\-*/][\s]*[+\-]?\d+)*[\s]*$/.test(String(v||''));
-      if(Blockly.dialog && typeof Blockly.dialog.setPrompt==='function' && !Blockly.dialog.__xrobo_v14){
-        Blockly.dialog.setPrompt(function(msg, defVal, cb){
-          const looksNumeric = numLike(defVal) || /value|값|number|숫자/i.test(String(msg||''));
-          if(looksNumeric){
-            promptCallback = v => { try{ cb(v); }catch(_){ } };
-            openForPrompt(defVal, lastAnchor);
-          }else{
-            const ans = window.prompt(String(msg||''), String(defVal||''));
-            try{ cb(ans); }catch(_){}
-          }
-        });
-        Blockly.dialog.__xrobo_v14 = true;
-      }
-    }catch(_){}
-  }
-
   document.addEventListener('focusin', function(e){
     const t = e.target;
     if(!t) return;
     if(t.classList && (t.classList.contains('blocklyHtmlInput') ||
                        t.classList.contains('blocklyHtmlTextInput'))){
-      openForInput(t, null);
+      activeInput = t;
+      buffer = String(t.value||'');
+      showPad();
+      positionNearInput(t);
+      startFollowInput(t);
+      sync();
       const onBlur = ()=>{ try{ commit(); }catch(_){ cancel(); } t.removeEventListener('blur', onBlur); };
       t.addEventListener('blur', onBlur);
     }
   }, true);
-
-  (function(){
-    if(!/Android/i.test(navigator.userAgent||'')) { return; }
-    const root = document.getElementById('blocklyDiv') || document.body;
-    const savePt = (e)=>{ lastAnchor = {x:e.clientX, y:e.clientY}; };
-    if(hasPointer){
-      root.addEventListener('pointerdown', savePt, true);
-    }else{
-      root.addEventListener('mousedown', savePt, true);
-      root.addEventListener('touchstart', (e)=>{
-        if(e.touches&&e.touches[0]) lastAnchor={x:e.touches[0].clientX, y:e.touches[0].clientY};
-      }, {capture:true, passive:true});
-    }
-  })();
-
-  function tryPatch(){ patchFieldNumber(); patchFieldTextInput(); patchPrompt(); }
-  if(document.readyState==='complete' || document.readyState==='interactive'){
-    tryPatch();
-  }else{
-    window.addEventListener('DOMContentLoaded', tryPatch);
-  }
-  let tries=0;
-  const iv=setInterval(()=>{ tryPatch(); if(++tries>12) clearInterval(iv); }, 300);
 })();
 </script>
 </body>

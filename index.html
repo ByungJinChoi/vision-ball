@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
-  <title>AI 공(sports ball) 탐지 테스트 (COCO-SSD + 밝기/그림자)</title>
+  <title>9분할 공 탐지 테스트 v3 (COCO-SSD)</title>
 
   <style>
     :root{
@@ -60,6 +60,23 @@
       gap:12px;
     }
 
+    .row{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+    label{ font-size:12px; color:var(--muted); font-weight:800; }
+    input[type="range"]{ width: 180px; }
+    code{
+      color:#d1fae5;
+      background: rgba(16,185,129,.12);
+      border:1px solid rgba(16,185,129,.25);
+      padding:2px 6px;
+      border-radius:8px;
+      font-weight:900;
+    }
+
     .stage{
       flex:1 1 auto;
       min-height: 260px;
@@ -96,52 +113,42 @@
       line-height:1.45;
       white-space:pre-wrap;
     }
-    code{
-      color:#d1fae5;
-      background: rgba(16,185,129,.12);
-      border:1px solid rgba(16,185,129,.25);
-      padding:2px 6px;
-      border-radius:8px;
-      font-weight:900;
-    }
-
-    .row{
-      display:flex;
-      gap:10px;
-      align-items:center;
-      flex-wrap:wrap;
-    }
-    input[type="range"]{ width: 180px; }
-    label{ font-size:12px; color:var(--muted); font-weight:800; }
   </style>
 
-  <!-- TensorFlow.js + COCO-SSD -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd/dist/coco-ssd.min.js"></script>
+  <!-- TensorFlow.js (Core) -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+  <!-- WASM backend (WebGL 안되면 fallback 용) -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.22.0/dist/tf-backend-wasm.min.js"></script>
+  <!-- COCO-SSD -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
 </head>
 
 <body>
   <header>
-    <div class="title">🎥 AI 공(sports ball) 탐지 테스트 (COCO-SSD)</div>
+    <div class="title">🎥 9분할 공(sports ball) 탐지 테스트 v3 (COCO‑SSD)</div>
     <div class="spacer"></div>
 
     <button id="camBtn" class="btn">캠 켜기</button>
 
     <span class="pill"><span class="muted">모델</span> <span id="modelStatus">로딩중…</span></span>
     <span class="pill"><span class="muted">탐지</span> <span id="detCount">—</span></span>
-    <span class="pill"><span class="muted">위치</span> <span id="zoneText">—</span></span>
+    <span class="pill"><span class="muted">선택</span> <span id="pickText">—</span></span>
     <span class="pill"><span class="muted">밝기</span> <span id="lightText">—</span></span>
   </header>
 
   <main>
     <div class="row">
       <label>탐지 주기(ms)</label>
-      <input id="period" type="range" min="150" max="1200" step="50" value="450">
-      <code id="periodVal">450</code>
+      <input id="period" type="range" min="200" max="1200" step="50" value="500">
+      <code id="periodVal">500</code>
 
       <label>최소 신뢰도</label>
-      <input id="thr" type="range" min="0.15" max="0.75" step="0.05" value="0.35">
+      <input id="thr" type="range" min="0.15" max="0.80" step="0.05" value="0.35">
       <code id="thrVal">0.35</code>
+
+      <label>최대 후보</label>
+      <input id="topk" type="range" min="5" max="30" step="1" value="20">
+      <code id="topkVal">20</code>
     </div>
 
     <div class="stage" id="stage">
@@ -151,9 +158,10 @@
 
     <div class="footer">
       <div class="small">
-- 라이브러리: <code>TensorFlow.js + COCO-SSD</code> (class: <code>sports ball</code>)
-- 장점: 패턴 배경에서도 “원처럼 보이는 무늬”에 덜 속음
-- 밝기/그림자: 공 ROI 평균 밝기 + 주변 배경 대비로 <code>밝음/보통/어두움</code> 표시
+- 라이브러리: <code>TensorFlow.js + COCO‑SSD</code> / 클래스: <code>sports ball</code>
+- 표시: 공 후보 여러 개면 모두 박스 표시, 가장 높은 점수 1개를 선택(하이라이트)
+- 9분할: <code>1~9</code> 번호 + 선택된 공의 칸 하이라이트
+- 밝기/그림자: 공 ROI 평균 밝기 vs 주변(확장 박스) 평균 대비로 <code>밝음/보통/어두움</code>
       </div>
       <div class="small" id="debug"></div>
     </div>
@@ -167,9 +175,10 @@
   const octx = overlay.getContext('2d');
 
   const camBtn = document.getElementById('camBtn');
+
   const modelStatus = document.getElementById('modelStatus');
   const detCount = document.getElementById('detCount');
-  const zoneText = document.getElementById('zoneText');
+  const pickText = document.getElementById('pickText');
   const lightText = document.getElementById('lightText');
   const debug = document.getElementById('debug');
 
@@ -177,9 +186,12 @@
   const periodVal = document.getElementById('periodVal');
   const thr = document.getElementById('thr');
   const thrVal = document.getElementById('thrVal');
+  const topk = document.getElementById('topk');
+  const topkVal = document.getElementById('topkVal');
 
   period.addEventListener('input', ()=> periodVal.textContent = period.value);
   thr.addEventListener('input', ()=> thrVal.textContent = Number(thr.value).toFixed(2));
+  topk.addEventListener('input', ()=> topkVal.textContent = topk.value);
 
   let stream = null;
   let camOn = false;
@@ -188,7 +200,7 @@
   let busy = false;
   let lastDetectAt = 0;
 
-  // 밝기 측정용 캔버스(작게)
+  // 밝기 측정용(작게)
   const snap = document.createElement('canvas');
   const sctx = snap.getContext('2d', { willReadFrequently:true });
 
@@ -205,7 +217,7 @@
     octx.setTransform(dpr,0,0,dpr,0,0);
   }
 
-  // object-fit: contain 에 맞춘 video 표시 영역
+  // object-fit: contain 영역
   function getDisplayRect(){
     const vw = video.videoWidth || 0;
     const vh = video.videoHeight || 0;
@@ -234,6 +246,7 @@
   function drawGrid(rect){
     const x0 = rect.left, y0 = rect.top, w = rect.width, h = rect.height;
 
+    // lines
     octx.strokeStyle = 'rgba(255,255,255,0.9)';
     octx.lineWidth = 1;
     octx.beginPath();
@@ -243,6 +256,7 @@
     octx.moveTo(x0, y0 + 2*h/3);    octx.lineTo(x0 + w, y0 + 2*h/3);
     octx.stroke();
 
+    // numbers
     octx.font = '900 16px system-ui';
     octx.textAlign = 'center';
     octx.textBaseline = 'middle';
@@ -252,6 +266,7 @@
         const n = r*3 + c + 1;
         const cx = x0 + (c+0.5)*(w/3);
         const cy = y0 + (r+0.5)*(h/3);
+
         octx.fillStyle = 'rgba(0,0,0,0.28)';
         octx.strokeStyle = 'rgba(255,255,255,0.22)';
         octx.lineWidth = 1;
@@ -259,6 +274,7 @@
         octx.arc(cx, cy, 14, 0, Math.PI*2);
         octx.fill();
         octx.stroke();
+
         octx.fillStyle = 'rgba(255,255,255,0.95)';
         octx.fillText(String(n), cx, cy);
       }
@@ -283,15 +299,15 @@
     octx.strokeRect(x0, y0, w, h);
   }
 
-  function drawBox(rect, bbox, style, label){
+  function drawBox(rect, bbox, isBest, label){
     const [x,y,w,h] = bbox;
     const rx = rect.left + x * rect.scaleX;
     const ry = rect.top  + y * rect.scaleY;
     const rw = w * rect.scaleX;
     const rh = h * rect.scaleY;
 
-    octx.strokeStyle = style.stroke;
-    octx.lineWidth = style.lineWidth;
+    octx.strokeStyle = isBest ? 'rgba(0,255,220,0.95)' : 'rgba(255,255,255,0.65)';
+    octx.lineWidth = isBest ? 3 : 2;
     octx.strokeRect(rx, ry, rw, rh);
 
     if(label){
@@ -300,15 +316,15 @@
       octx.textBaseline = 'top';
       const pad = 4;
       const tw = octx.measureText(label).width;
-      octx.fillStyle = style.bg;
+      octx.fillStyle = isBest ? 'rgba(0,0,0,0.55)' : 'rgba(0,0,0,0.35)';
       octx.fillRect(rx, ry, tw + pad*2, 16 + pad);
-      octx.fillStyle = style.fg;
+      octx.fillStyle = 'rgba(255,255,255,0.95)';
       octx.fillText(label, rx + pad, ry + 2);
     }
   }
 
-  function meanLuma(imageData){
-    const d = imageData.data;
+  function meanLuma(imgData){
+    const d = imgData.data;
     let sum = 0;
     const n = d.length / 4;
     for(let i=0;i<d.length;i+=4){
@@ -320,70 +336,75 @@
 
   function brightnessLabel(roiMean, bgMean){
     const diff = roiMean - bgMean;
-    // diff 기반이 제일 직관적 (주변 대비)
     if(diff > 18) return {label:'밝음', diff};
     if(diff < -18) return {label:'어두움', diff};
     return {label:'보통', diff};
   }
 
-  function computeBrightnessForBox(vw, vh, bbox){
-    // snap 캔버스 크기 설정(가볍게)
+  function computeBrightness(vw, vh, bbox){
+    // 작은 캔버스에 프레임 복사
     const targetW = 320;
-    const scale = targetW / Math.max(1, vw);
-    const targetH = Math.max(1, Math.round(vh * scale));
+    const sc = targetW / Math.max(1, vw);
+    const targetH = Math.max(1, Math.round(vh * sc));
     if(snap.width !== targetW || snap.height !== targetH){
       snap.width = targetW;
       snap.height = targetH;
     }
     sctx.drawImage(video, 0, 0, targetW, targetH);
 
-    // bbox -> snap 좌표
     const [x,y,w,h] = bbox;
-    const sx = clamp(Math.round(x * scale), 0, targetW-1);
-    const sy = clamp(Math.round(y * scale), 0, targetH-1);
-    const sw = clamp(Math.round(w * scale), 1, targetW - sx);
-    const sh = clamp(Math.round(h * scale), 1, targetH - sy);
 
-    // ROI
+    const sx = clamp(Math.round(x * sc), 0, targetW-1);
+    const sy = clamp(Math.round(y * sc), 0, targetH-1);
+    const sw = clamp(Math.round(w * sc), 1, targetW - sx);
+    const sh = clamp(Math.round(h * sc), 1, targetH - sy);
+
     const roi = sctx.getImageData(sx, sy, sw, sh);
     const roiMean = meanLuma(roi);
 
-    // 주변 배경(확장 박스)
+    // 주변 배경(확장 영역)
     const ex = clamp(Math.round(sx - sw*0.18), 0, targetW-1);
     const ey = clamp(Math.round(sy - sh*0.18), 0, targetH-1);
     const ew = clamp(Math.round(sw*1.36), 1, targetW - ex);
     const eh = clamp(Math.round(sh*1.36), 1, targetH - ey);
 
     const bg = sctx.getImageData(ex, ey, ew, eh);
-    const bgMeanAll = meanLuma(bg);
+    const bgMean = meanLuma(bg);
 
-    // 배경 평균을 “확장영역 평균”으로 쓰면 ROI가 섞이긴 하지만,
-    // 테스트 목적에는 충분히 잘 동작합니다(속도/단순성 우선).
-    // 좀 더 정확하게 하려면 ROI 제외 계산을 추가하면 됩니다.
-    const label = brightnessLabel(roiMean, bgMeanAll);
-
-    return {
-      roiMean, bgMean: bgMeanAll,
-      diff: label.diff,
-      label: label.label
-    };
+    const r = brightnessLabel(roiMean, bgMean);
+    return {roiMean, bgMean, diff:r.diff, label:r.label};
   }
 
   async function loadModel(){
     try{
       modelStatus.textContent = 'TF 준비중…';
-      // webgl 우선
+
+      // 1) WebGL 우선 시도
+      let backend = null;
       try{
         await tf.setBackend('webgl');
+        await tf.ready();
+        backend = tf.getBackend();
       }catch(_e){}
-      await tf.ready();
+
+      // 2) WebGL이 안되면 WASM fallback
+      if(backend !== 'webgl'){
+        try{
+          // wasm 파일 경로 지정(필수)
+          if(tf && tf.wasm && tf.wasm.setWasmPaths){
+            tf.wasm.setWasmPaths('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.22.0/dist/');
+          }
+          await tf.setBackend('wasm');
+          await tf.ready();
+          backend = tf.getBackend();
+        }catch(_e){}
+      }
 
       modelStatus.textContent = '모델 로딩중…';
-      // lite_mobilenet_v2: 모바일에서 좀 더 빠름
+      // lite_mobilenet_v2: 모바일에서 빠른 편
       model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
 
-      const backend = tf.getBackend ? tf.getBackend() : 'unknown';
-      modelStatus.textContent = `준비완료(${backend})`;
+      modelStatus.textContent = `준비완료(${backend || 'unknown'})`;
     }catch(e){
       console.error(e);
       modelStatus.textContent = '로딩 실패';
@@ -404,56 +425,55 @@
       if(vw<=0 || vh<=0) return;
 
       const minScore = Number(thr.value);
+      const maxK = Number(topk.value);
 
       // detect(video) 결과 bbox는 video 픽셀 좌표 기준
-      const preds = await model.detect(video, 20);
+      const preds = await model.detect(video, maxK);
 
       // sports ball만
       const balls = preds
         .filter(p => p && p.class === 'sports ball' && (p.score || 0) >= minScore)
-        .map(p => ({
-          score: p.score || 0,
-          bbox: p.bbox, // [x,y,w,h]
-        }))
+        .map(p => ({ score: p.score || 0, bbox: p.bbox }))
         .sort((a,b)=>b.score-a.score);
 
-      // 렌더
       resizeOverlay();
       octx.clearRect(0,0, overlay.width, overlay.height);
+
       const rect = getDisplayRect();
       drawGrid(rect);
 
       detCount.textContent = balls.length ? `${balls.length}개` : '0개';
 
-      let bestZone = null;
-      let bestLight = null;
+      if(!balls.length){
+        pickText.textContent = '—';
+        lightText.textContent = '—';
+        const t1 = performance.now();
+        debug.textContent = `detect ${(t1-t0).toFixed(0)}ms · 후보 0개 (thr ${minScore.toFixed(2)})`;
+        return;
+      }
 
-      // 여러 개 표시
+      // 여러 개 표시 + 1개 선택
+      let best = balls[0];
+      const [bx,by,bw,bh] = best.bbox;
+      const bcx = bx + bw/2;
+      const bcy = by + bh/2;
+      const bestZone = zoneFromPoint(bcx, bcy, vw, vh);
+
+      // 선택 존 하이라이트
+      drawZoneHighlight(rect, bestZone);
+
       for(let i=0;i<balls.length;i++){
         const b = balls[i];
         const [x,y,w,h] = b.bbox;
         const cx = x + w/2;
         const cy = y + h/2;
         const z = zoneFromPoint(cx, cy, vw, vh);
-
         const isBest = (i===0);
         const label = `ball ${(b.score*100).toFixed(0)}% · ${z}번`;
+        drawBox(rect, b.bbox, isBest, label);
 
-        drawBox(rect, b.bbox, {
-          stroke: isBest ? 'rgba(0,255,220,0.95)' : 'rgba(255,255,255,0.65)',
-          lineWidth: isBest ? 3 : 2,
-          bg: isBest ? 'rgba(0,0,0,0.55)' : 'rgba(0,0,0,0.35)',
-          fg: 'rgba(255,255,255,0.95)'
-        }, label);
-
+        // 선택 공 중심표시
         if(isBest){
-          bestZone = z;
-          drawZoneHighlight(rect, bestZone);
-
-          // 밝기/그림자 판단
-          bestLight = computeBrightnessForBox(vw, vh, b.bbox);
-
-          // 중심 표시
           const px = rect.left + cx*rect.scaleX;
           const py = rect.top  + cy*rect.scaleY;
           octx.strokeStyle = 'rgba(0,255,220,0.95)';
@@ -465,19 +485,15 @@
         }
       }
 
-      zoneText.textContent = bestZone ? `${bestZone}번` : '—';
-      if(bestLight){
-        lightText.textContent = `${bestLight.label} (Δ${bestLight.diff.toFixed(0)})`;
-      }else{
-        lightText.textContent = '—';
-      }
+      pickText.textContent = `${bestZone}번 · ${(best.score*100).toFixed(0)}%`;
+
+      const light = computeBrightness(vw, vh, best.bbox);
+      lightText.textContent = `${light.label} (Δ${light.diff.toFixed(0)})`;
 
       const t1 = performance.now();
       debug.textContent =
-        `detect ${(t1-t0).toFixed(0)}ms · period ${period.value}ms · thr ${Number(thr.value).toFixed(2)}\n` +
-        (bestLight
-          ? `ROI 밝기 ${bestLight.roiMean.toFixed(0)} / 주변 ${bestLight.bgMean.toFixed(0)} / Δ${bestLight.diff.toFixed(0)}`
-          : `공(sports ball) 탐지 없음 (공이 작거나 시야에 없거나, 모델이 인식 못할 수 있음)`);
+        `detect ${(t1-t0).toFixed(0)}ms · period ${period.value}ms · thr ${minScore.toFixed(2)} · topK ${maxK}\n` +
+        `ROI ${light.roiMean.toFixed(0)} / BG ${light.bgMean.toFixed(0)} / Δ${light.diff.toFixed(0)} · zone ${bestZone}`;
 
     }catch(e){
       console.error(e);
@@ -523,7 +539,7 @@
       lastDetectAt = 0;
       resizeOverlay();
     }catch(e){
-      debug.textContent = '카메라 실패: ' + e;
+      debug.textContent = '카메라 실패: ' + e + '\n(HTTPS/localhost에서 실행 중인지 확인하세요)';
     }
   }
 
@@ -541,7 +557,7 @@
       camBtn.classList.remove('off');
 
       detCount.textContent = '—';
-      zoneText.textContent = '—';
+      pickText.textContent = '—';
       lightText.textContent = '—';
       debug.textContent = '';
 
@@ -553,9 +569,9 @@
   camBtn.addEventListener('click', () => camOn ? stopCam() : startCam());
   window.addEventListener('resize', resizeOverlay);
 
-  // 시작: 모델 로딩
-  loadModel();
+  // 시작: 모델 로드 + 루프 시작
   resizeOverlay();
+  loadModel();
   requestAnimationFrame(loop);
 })();
 </script>

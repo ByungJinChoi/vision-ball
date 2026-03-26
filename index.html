@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
-  <title>공 찾기 → 공 확인 → 공 추적</title>
+  <title>흰색 공 찾기 · 공 확인 · 공 추적</title>
   <style>
     :root{
       --bg:#0b0f14;
@@ -16,84 +16,127 @@
       --panel:rgba(0,0,0,.28);
     }
     *{ box-sizing:border-box; }
-    html,body{ height:100%; margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--fg); }
+    html,body{
+      height:100%;
+      margin:0;
+      background:var(--bg);
+      color:var(--fg);
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    }
     header{
       padding:12px 14px;
       border-bottom:1px solid rgba(255,255,255,.08);
-      display:flex; gap:12px; align-items:center; flex-wrap:wrap;
+      display:flex;
+      gap:12px;
+      align-items:center;
+      flex-wrap:wrap;
     }
     .title{ font-weight:900; letter-spacing:.2px; }
     .spacer{ flex:1 1 auto; }
     .btn{
-      border:0; border-radius:10px; padding:10px 14px; font-weight:900; cursor:pointer;
-      background:var(--blue); color:white; box-shadow:0 6px 18px rgba(0,0,0,.25);
+      border:0;
+      border-radius:10px;
+      padding:10px 14px;
+      font-weight:900;
+      cursor:pointer;
+      color:white;
+      background:var(--blue);
+      box-shadow:0 6px 18px rgba(0,0,0,.25);
     }
     .btn.off{ background:var(--red); }
-    .btn.green{ background:var(--green); }
-    .btn.yellow{ background:var(--yellow); color:#111827; }
+    .btn.finding{ background:var(--yellow); color:#111827; }
+    .btn.tracking{ background:var(--green); }
     .btn:disabled{ opacity:.45; cursor:not-allowed; }
     .pill{
-      display:inline-flex; align-items:center; gap:8px; padding:8px 10px; border-radius:999px;
-      border:1px solid rgba(255,255,255,.14); background:var(--panel); font:800 13px/1 system-ui;
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:8px 10px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.14);
+      background:var(--panel);
+      font:800 13px/1 system-ui;
       white-space:nowrap;
     }
     .muted{ color:var(--muted); font-weight:700; }
-    main{ height:calc(100vh - 68px); display:flex; flex-direction:column; gap:12px; padding:12px; }
-    .row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-    label{ font-size:12px; color:var(--muted); font-weight:800; }
-    input[type="range"]{ width:180px; }
-    code{
-      color:#d1fae5; background:rgba(16,185,129,.12); border:1px solid rgba(16,185,129,.25);
-      padding:2px 6px; border-radius:8px; font-weight:900;
+    main{
+      height:calc(100vh - 68px);
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+      padding:12px;
     }
     .stage{
-      flex:1 1 auto; min-height:280px; position:relative; background:#000; border-radius:14px;
-      overflow:hidden; border:1px solid rgba(255,255,255,.10);
+      flex:1 1 auto;
+      min-height:280px;
+      position:relative;
+      background:#000;
+      border-radius:14px;
+      overflow:hidden;
+      border:1px solid rgba(255,255,255,.10);
     }
-    video{ width:100%; height:100%; object-fit:contain; background:#000; }
-    #overlay{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
-    .footer{ display:flex; gap:10px; flex-wrap:wrap; justify-content:space-between; align-items:flex-start; }
-    .small{ color:var(--muted); font-size:12px; line-height:1.5; white-space:pre-wrap; }
+    video{
+      width:100%;
+      height:100%;
+      object-fit:contain;
+      background:#000;
+    }
+    #overlay{
+      position:absolute;
+      inset:0;
+      width:100%;
+      height:100%;
+      pointer-events:none;
+    }
+    .footer{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      justify-content:space-between;
+      align-items:flex-start;
+    }
+    .small{
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.55;
+      white-space:pre-wrap;
+    }
+    code{
+      color:#d1fae5;
+      background:rgba(16,185,129,.12);
+      border:1px solid rgba(16,185,129,.25);
+      padding:2px 6px;
+      border-radius:8px;
+      font-weight:900;
+    }
   </style>
   <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
 </head>
 <body>
   <header>
-    <div class="title">🎥 공 찾기 → 공 확인 → 공 추적</div>
+    <div class="title">🎥 흰색 공 찾기 → 공 확인 → 공 추적</div>
     <div class="spacer"></div>
     <button id="camBtn" class="btn">캠 켜기</button>
-    <button id="findBtn" class="btn green" disabled>공 찾기</button>
+    <button id="actionBtn" class="btn" disabled>공 찾기</button>
     <span class="pill"><span class="muted">OpenCV</span> <span id="cvStatus">로딩중…</span></span>
     <span class="pill"><span class="muted">상태</span> <span id="modeText">대기</span></span>
-    <span class="pill"><span class="muted">후보</span> <span id="candText">—</span></span>
-    <span class="pill"><span class="muted">추적</span> <span id="trackText">—</span></span>
+    <span class="pill"><span class="muted">위치</span> <span id="posText">—</span></span>
   </header>
 
   <main>
-    <div class="row">
-      <label>처리 주기(ms)</label>
-      <input id="period" type="range" min="100" max="500" step="10" value="100">
-      <code id="periodVal">100</code>
-
-      <label>원 검출 민감도</label>
-      <input id="hough2" type="range" min="12" max="60" step="1" value="24">
-      <code id="hough2Val">24</code>
-
-      <label>흰색 허용범위</label>
-      <input id="colorTol" type="range" min="8" max="80" step="1" value="26">
-      <code id="colorTolVal">26</code>
-    </div>
-
     <div class="stage" id="stage">
       <video id="video" playsinline autoplay muted></video>
       <canvas id="overlay"></canvas>
     </div>
 
     <div class="footer">
-      <div class="small">- 공 찾기: 흰색 단색공처럼 보이는 원 1개만 선택해서 표시
-- 공 확인: 현재 표시된 원이 맞으면 그 공을 기준 공으로 저장
-- 추적: 저장된 공의 밝기/크기/이전 위치를 사용해 0.1초 간격으로 위치 표시
-- 흰색 공 1개만 사용하는 전제로 구성</div>
+      <div class="small">사용 순서
+1. <code>캠 켜기</code>
+2. <code>공 찾기</code>를 누른 뒤 흰색 공 1개를 화면 중앙에 둡니다.
+3. 공 둘레에 초록 원이 맞게 표시되면 <code>공 확인</code>을 누릅니다.
+4. 그 뒤에는 공 위치를 계속 동그라미로 표시합니다.
+
+설정은 모두 빼고, 흰색 공 1개만 찾도록 단순화했습니다.</div>
       <div class="small" id="debug"></div>
     </div>
   </main>
@@ -106,39 +149,30 @@
   const octx = overlay.getContext('2d');
 
   const camBtn = document.getElementById('camBtn');
-  const findBtn = document.getElementById('findBtn');
+  const actionBtn = document.getElementById('actionBtn');
   const cvStatus = document.getElementById('cvStatus');
   const modeText = document.getElementById('modeText');
-  const candText = document.getElementById('candText');
-  const trackText = document.getElementById('trackText');
+  const posText = document.getElementById('posText');
   const debug = document.getElementById('debug');
 
-  const period = document.getElementById('period');
-  const periodVal = document.getElementById('periodVal');
-  const hough2 = document.getElementById('hough2');
-  const hough2Val = document.getElementById('hough2Val');
-  const colorTol = document.getElementById('colorTol');
-  const colorTolVal = document.getElementById('colorTolVal');
-
-  period.addEventListener('input', ()=> periodVal.textContent = period.value);
-  hough2.addEventListener('input', ()=> hough2Val.textContent = hough2.value);
-  colorTol.addEventListener('input', ()=> colorTolVal.textContent = colorTol.value);
+  const PROCESS_MS = 100;
 
   let stream = null;
   let camOn = false;
   let cvReady = false;
+  let mode = 'idle'; // idle | finding | tracking
   let busy = false;
   let lastAt = 0;
-  let mode = 'idle'; // idle | finding | tracking
 
-  let lastCandidates = [];
-  let selectedBall = null; // {x,y,r,h,s,v,area}
-  let lastTracked = null;
+  let currentCandidate = null;
+  let confirmedBall = null;
+  let trackedBall = null;
+  let lostCount = 0;
 
   const workCanvas = document.createElement('canvas');
-  const workCtx = workCanvas.getContext('2d', { willReadFrequently:true });
+  const workCtx = workCanvas.getContext('2d', { willReadFrequently: true });
 
-  function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
 
   function resizeOverlay(){
     const dpr = Math.max(1, window.devicePixelRatio || 1);
@@ -148,7 +182,7 @@
     overlay.height = Math.round(h * dpr);
     overlay.style.width = w + 'px';
     overlay.style.height = h + 'px';
-    octx.setTransform(dpr,0,0,dpr,0,0);
+    octx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
   function getDisplayRect(){
@@ -156,112 +190,110 @@
     const vh = video.videoHeight || 0;
     const ww = stage.clientWidth || 1;
     const wh = stage.clientHeight || 1;
-    if(vw <= 0 || vh <= 0) return {left:0, top:0, width:ww, height:wh, scale:1};
+    if(vw <= 0 || vh <= 0) return { left:0, top:0, width:ww, height:wh, scale:1 };
     const s = Math.min(ww / vw, wh / vh);
     const dw = vw * s;
     const dh = vh * s;
-    const left = (ww - dw) / 2;
-    const top = (wh - dh) / 2;
-    return {left, top, width:dw, height:dh, scale:s};
+    return { left:(ww - dw) / 2, top:(wh - dh) / 2, width:dw, height:dh, scale:s };
   }
 
-  function toViewCircle(c){
+  function toViewCircle(circle){
     const rect = getDisplayRect();
     return {
-      x: rect.left + c.x * rect.scale,
-      y: rect.top + c.y * rect.scale,
-      r: c.r * rect.scale
+      x: rect.left + circle.x * rect.scale,
+      y: rect.top + circle.y * rect.scale,
+      r: circle.r * rect.scale
     };
   }
 
   function clearOverlay(){
-    octx.clearRect(0,0,stage.clientWidth, stage.clientHeight);
+    octx.clearRect(0, 0, stage.clientWidth, stage.clientHeight);
   }
 
-  function drawCircle(c, color, lineWidth=3, text=''){
-    const v = toViewCircle(c);
-    octx.strokeStyle = color;
-    octx.lineWidth = lineWidth;
+  function drawCenterGuide(){
+    const rect = getDisplayRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const guideR = Math.max(28, Math.min(rect.width, rect.height) * 0.10);
+
+    octx.save();
+    octx.strokeStyle = 'rgba(255,255,255,.45)';
+    octx.lineWidth = 2;
+    octx.setLineDash([8, 6]);
     octx.beginPath();
-    octx.arc(v.x, v.y, Math.max(6, v.r), 0, Math.PI*2);
+    octx.arc(cx, cy, guideR, 0, Math.PI * 2);
+    octx.stroke();
+    octx.setLineDash([]);
+
+    octx.beginPath();
+    octx.moveTo(cx - 16, cy);
+    octx.lineTo(cx + 16, cy);
+    octx.moveTo(cx, cy - 16);
+    octx.lineTo(cx, cy + 16);
+    octx.stroke();
+    octx.restore();
+  }
+
+  function drawLabel(text, x, y){
+    octx.font = '900 14px system-ui';
+    const padX = 8;
+    const boxW = octx.measureText(text).width + padX * 2;
+    const boxH = 24;
+    const drawX = clamp(x - boxW / 2, 6, stage.clientWidth - boxW - 6);
+    const drawY = clamp(y, 6, stage.clientHeight - boxH - 6);
+    octx.fillStyle = 'rgba(0,0,0,.72)';
+    octx.fillRect(drawX, drawY, boxW, boxH);
+    octx.fillStyle = '#ffffff';
+    octx.fillText(text, drawX + padX, drawY + 16);
+  }
+
+  function drawCircle(circle, color, label){
+    const v = toViewCircle(circle);
+    const rr = Math.max(8, v.r);
+
+    octx.strokeStyle = color;
+    octx.lineWidth = 4;
+    octx.beginPath();
+    octx.arc(v.x, v.y, rr, 0, Math.PI * 2);
     octx.stroke();
 
-    octx.beginPath();
-    octx.arc(v.x, v.y, 4, 0, Math.PI*2);
     octx.fillStyle = color;
+    octx.beginPath();
+    octx.arc(v.x, v.y, 4, 0, Math.PI * 2);
     octx.fill();
 
-    if(text){
-      octx.font = '900 14px system-ui';
-      const padX = 8, h = 24;
-      const w = octx.measureText(text).width + padX * 2;
-      const x = clamp(v.x - w/2, 4, stage.clientWidth - w - 4);
-      const y = Math.max(6, v.y - v.r - h - 8);
-      octx.fillStyle = 'rgba(0,0,0,.72)';
-      octx.fillRect(x, y, w, h);
-      octx.fillStyle = '#fff';
-      octx.fillText(text, x + padX, y + 16);
-    }
+    if(label) drawLabel(label, v.x, v.y - rr - 30);
   }
 
-  function drawFinding(candidates){
+  function drawFindingOverlay(){
     clearOverlay();
-    const rect = getDisplayRect();
-    octx.strokeStyle = 'rgba(255,255,255,.18)';
-    octx.strokeRect(rect.left, rect.top, rect.width, rect.height);
-    for(let i=0;i<candidates.length;i++){
-      const c = candidates[i];
-      const isBest = i === 0;
-      drawCircle(c, '#22c55e', 4, '흰색 공 후보');
-    }
-    if(!candidates.length){
-      octx.font = '900 18px system-ui';
-      octx.fillStyle = 'rgba(255,255,255,.92)';
-      octx.fillText('공처럼 보이는 원을 찾는 중입니다.', 16, 28);
+    drawCenterGuide();
+    if(currentCandidate){
+      drawCircle(currentCandidate, '#22c55e', '공 후보');
+      const v = toViewCircle(currentCandidate);
+      octx.strokeStyle = 'rgba(34,197,94,.7)';
+      octx.lineWidth = 1.5;
+      octx.beginPath();
+      octx.moveTo(v.x, v.y);
+      const rect = getDisplayRect();
+      octx.lineTo(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      octx.stroke();
+    } else {
+      drawLabel('공을 중앙에 맞춰 주세요', stage.clientWidth / 2, 16);
     }
   }
 
-  function drawTracking(circle, lost=false){
+  function drawTrackingOverlay(lost = false){
     clearOverlay();
-    if(circle){
-      drawCircle(circle, lost ? '#f59e0b' : '#22c55e', 4, lost ? '잠시 놓침' : '추적 중');
+    if(trackedBall){
+      drawCircle(trackedBall, lost ? '#f59e0b' : '#22c55e', lost ? '잠시 놓침' : '공 위치');
     }
   }
 
-  function sampleBallInfo(cx, cy, r){
-    const vw = video.videoWidth, vh = video.videoHeight;
-    if(!vw || !vh) return null;
-    workCanvas.width = vw;
-    workCanvas.height = vh;
-    workCtx.drawImage(video, 0, 0, vw, vh);
-    const x0 = Math.max(0, Math.floor(cx - r * 0.7));
-    const y0 = Math.max(0, Math.floor(cy - r * 0.7));
-    const w = Math.max(1, Math.floor(r * 1.4));
-    const h = Math.max(1, Math.floor(r * 1.4));
-    const img = workCtx.getImageData(x0, y0, Math.min(w, vw - x0), Math.min(h, vh - y0));
-    let hs = 0, ss = 0, vs = 0, bright = 0, n = 0;
-    const rx = img.width / 2;
-    const ry = img.height / 2;
-    const rr = Math.min(rx, ry) * 0.88;
-    for(let y=0;y<img.height;y++){
-      for(let x=0;x<img.width;x++){
-        const dx = x - rx, dy = y - ry;
-        if(dx*dx + dy*dy > rr*rr) continue;
-        const i = (y * img.width + x) * 4;
-        const r0 = img.data[i], g0 = img.data[i+1], b0 = img.data[i+2];
-        const hsv = rgbToHsv(r0, g0, b0);
-        hs += hsv.h; ss += hsv.s; vs += hsv.v;
-        bright += (r0 + g0 + b0) / 3;
-        n++;
-      }
-    }
-    if(!n) return null;
-    return { h: hs/n, s: ss/n, v: vs/n, bright: bright/n };
-  }
-
-  function rgbToHsv(r,g,b){
-    r/=255; g/=255; b/=255;
-    const max = Math.max(r,g,b), min = Math.min(r,g,b);
+  function rgbToHsv(r, g, b){
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
     const d = max - min;
     let h = 0;
     if(d !== 0){
@@ -273,123 +305,276 @@
     }
     if(h < 0) h += 360;
     const s = max === 0 ? 0 : d / max;
-    const v = max;
-    return { h, s: s * 255, v: v * 255 };
+    return { h, s: s * 255, v: max * 255 };
   }
 
-  function hueDiff(a,b){
-    let d = Math.abs(a-b);
-    if(d > 180) d = 360 - d;
-    return d;
+  function sampleBallInfo(cx, cy, r){
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if(!vw || !vh) return null;
+
+    workCanvas.width = vw;
+    workCanvas.height = vh;
+    workCtx.drawImage(video, 0, 0, vw, vh);
+
+    const x0 = Math.max(0, Math.floor(cx - r * 0.85));
+    const y0 = Math.max(0, Math.floor(cy - r * 0.85));
+    const w = Math.max(1, Math.floor(r * 1.7));
+    const h = Math.max(1, Math.floor(r * 1.7));
+    const img = workCtx.getImageData(x0, y0, Math.min(w, vw - x0), Math.min(h, vh - y0));
+
+    const mx = img.width / 2;
+    const my = img.height / 2;
+    const rr = Math.min(mx, my) * 0.92;
+    let n = 0;
+    let sSum = 0;
+    let vSum = 0;
+    let brightSum = 0;
+    let whiteCount = 0;
+
+    for(let y = 0; y < img.height; y++){
+      for(let x = 0; x < img.width; x++){
+        const dx = x - mx;
+        const dy = y - my;
+        if(dx * dx + dy * dy > rr * rr) continue;
+        const i = (y * img.width + x) * 4;
+        const r0 = img.data[i];
+        const g0 = img.data[i + 1];
+        const b0 = img.data[i + 2];
+        const hsv = rgbToHsv(r0, g0, b0);
+        sSum += hsv.s;
+        vSum += hsv.v;
+        brightSum += (r0 + g0 + b0) / 3;
+        if(hsv.s <= 90 && hsv.v >= 160) whiteCount++;
+        n++;
+      }
+    }
+
+    if(!n) return null;
+    return {
+      sMean: sSum / n,
+      vMean: vSum / n,
+      brightMean: brightSum / n,
+      whiteRatio: whiteCount / n
+    };
   }
 
-  function getFrameMat(maxSide = 640){
-    const vw = video.videoWidth, vh = video.videoHeight;
+  function getFrameMat(maxSide = 720){
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
     let scale = 1;
-    const m = Math.max(vw, vh);
-    if(m > maxSide) scale = maxSide / m;
+    const maxDim = Math.max(vw, vh);
+    if(maxDim > maxSide) scale = maxSide / maxDim;
     const w = Math.max(1, Math.round(vw * scale));
     const h = Math.max(1, Math.round(vh * scale));
-    workCanvas.width = w; workCanvas.height = h;
+    workCanvas.width = w;
+    workCanvas.height = h;
     workCtx.drawImage(video, 0, 0, w, h);
     const src = cv.imread(workCanvas);
     return { src, scale, w, h };
   }
 
-  function findBallCandidates(){
-    const { src, scale, w, h } = getFrameMat(720);
-    const gray = new cv.Mat();
-    const blurred = new cv.Mat();
-    const circles = new cv.Mat();
-    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
-    cv.GaussianBlur(gray, blurred, new cv.Size(9,9), 1.8, 1.8, cv.BORDER_DEFAULT);
-
-    const minDist = Math.max(28, Math.round(Math.min(w,h) * 0.18));
-    const minR = Math.max(10, Math.round(Math.min(w,h) * 0.025));
-    const maxR = Math.max(minR + 8, Math.round(Math.min(w,h) * 0.18));
-    cv.HoughCircles(blurred, circles, cv.HOUGH_GRADIENT, 1.2, minDist, 130, Number(hough2.value), minR, maxR);
-
-    const out = [];
-    for(let i=0; i<circles.cols; i++){
-      const x = circles.data32F[i * 3] / scale;
-      const y = circles.data32F[i * 3 + 1] / scale;
-      const r = circles.data32F[i * 3 + 2] / scale;
-      if(x-r < 0 || y-r < 0 || x+r > video.videoWidth || y+r > video.videoHeight) continue;
-      const info = sampleBallInfo(x, y, r);
-      if(!info) continue;
-      const whiteScore = info.v * 1.1 - info.s * 1.4 + info.bright * 0.8 + r * 0.25;
-      if(info.v < 120) continue;
-      if(info.s > 85) continue;
-      if(info.bright < 120) continue;
-      out.push({ x, y, r, score: whiteScore, ...info });
-    }
-
-    out.sort((a,b) => b.score - a.score);
-    const best = out.length ? [out[0]] : [];
-
-    src.delete(); gray.delete(); blurred.delete(); circles.delete();
-    return best;
-  }
-
-  function trackSelectedBall(){
-    if(!selectedBall) return null;
-
-    const { src, scale } = getFrameMat(640);
+  function buildWhiteMask(src, satMax, valMin){
+    const rgb = new cv.Mat();
     const hsv = new cv.Mat();
-    cv.cvtColor(src, hsv, cv.COLOR_RGBA2RGB);
-    cv.cvtColor(hsv, hsv, cv.COLOR_RGB2HSV);
+    const mask = new cv.Mat();
+    const low = new cv.Mat(src.rows, src.cols, cv.CV_8UC3, [0, 0, valMin]);
+    const high = new cv.Mat(src.rows, src.cols, cv.CV_8UC3, [179, satMax, 255]);
 
-    const tol = Number(colorTol.value);
-    const vMin = clamp((selectedBall.v || 210) - tol * 2.4, 115, 245);
-    const sMax = clamp((selectedBall.s || 30) + tol * 1.8, 35, 110);
-
-    const low = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [0, 0, vMin, 0]);
-    const high = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [179, sMax, 255, 255]);
-    let mask = new cv.Mat();
+    cv.cvtColor(src, rgb, cv.COLOR_RGBA2RGB);
+    cv.cvtColor(rgb, hsv, cv.COLOR_RGB2HSV);
     cv.inRange(hsv, low, high, mask);
 
-    const kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(5,5));
+    const kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(5, 5));
     cv.morphologyEx(mask, mask, cv.MORPH_OPEN, kernel);
     cv.morphologyEx(mask, mask, cv.MORPH_CLOSE, kernel);
-    cv.GaussianBlur(mask, mask, new cv.Size(7,7), 0, 0, cv.BORDER_DEFAULT);
+    cv.GaussianBlur(mask, mask, new cv.Size(7, 7), 0, 0, cv.BORDER_DEFAULT);
     cv.threshold(mask, mask, 120, 255, cv.THRESH_BINARY);
 
+    rgb.delete();
+    hsv.delete();
+    low.delete();
+    high.delete();
+    kernel.delete();
+
+    return mask;
+  }
+
+  function contourToCircle(cnt){
+    if(cv.minEnclosingCircle){
+      const circle = cv.minEnclosingCircle(cnt);
+      if(circle && circle.center && Number.isFinite(circle.radius)) {
+        return { x: circle.center.x, y: circle.center.y, r: circle.radius };
+      }
+    }
+    const rect = cv.boundingRect(cnt);
+    return {
+      x: rect.x + rect.width / 2,
+      y: rect.y + rect.height / 2,
+      r: Math.max(rect.width, rect.height) / 2
+    };
+  }
+
+  function findBallInMask(mask, scale, searchRect, baseBall, opts = {}){
+    const fullW = mask.cols;
+    const fullH = mask.rows;
+    const rect = new cv.Rect(
+      clamp(Math.round(searchRect.x), 0, fullW - 1),
+      clamp(Math.round(searchRect.y), 0, fullH - 1),
+      clamp(Math.round(searchRect.w), 1, fullW),
+      clamp(Math.round(searchRect.h), 1, fullH)
+    );
+    rect.width = Math.min(rect.width, fullW - rect.x);
+    rect.height = Math.min(rect.height, fullH - rect.y);
+
+    const roi = mask.roi(rect);
     const contours = new cv.MatVector();
     const hierarchy = new cv.Mat();
-    cv.findContours(mask, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    cv.findContours(roi, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+    const cx0 = fullW / 2;
+    const cy0 = fullH / 2;
+    const minSide = Math.min(fullW, fullH);
+    const minR = opts.minR || Math.max(8, minSide * 0.018);
+    const maxR = opts.maxR || Math.max(minR + 6, minSide * 0.24);
 
     let best = null;
-    const prev = lastTracked || selectedBall;
-    const baseArea = Math.PI * ((selectedBall.r * scale) ** 2);
 
-    for(let i=0;i<contours.size();i++){
+    for(let i = 0; i < contours.size(); i++){
       const cnt = contours.get(i);
       const area = cv.contourArea(cnt);
-      if(area < 60) { cnt.delete(); continue; }
-      const perimeter = cv.arcLength(cnt, true);
-      if(perimeter <= 0) { cnt.delete(); continue; }
-      const circularity = (4 * Math.PI * area) / (perimeter * perimeter);
-      const rect = cv.boundingRect(cnt);
-      const cx = rect.x + rect.width / 2;
-      const cy = rect.y + rect.height / 2;
-      const radius = (rect.width + rect.height) / 4;
+      if(area < Math.PI * minR * minR * 0.35){ cnt.delete(); continue; }
 
-      const dist = Math.hypot(cx/scale - prev.x, cy/scale - prev.y);
-      const areaRatio = area / baseArea;
-      const radiusRatio = (radius/scale) / selectedBall.r;
+      const peri = cv.arcLength(cnt, true);
+      if(peri <= 0){ cnt.delete(); continue; }
 
-      if(circularity < 0.55) { cnt.delete(); continue; }
-      if(areaRatio < 0.18 || areaRatio > 2.2) { cnt.delete(); continue; }
-      if(radiusRatio < 0.55 || radiusRatio > 1.7) { cnt.delete(); continue; }
+      const localCircle = contourToCircle(cnt);
+      const rx = localCircle.x + rect.x;
+      const ry = localCircle.y + rect.y;
+      const rr = localCircle.r;
 
-      const score = circularity * 260 - dist * 0.42 - Math.abs(radiusRatio - 1) * 80;
+      if(rr < minR || rr > maxR){ cnt.delete(); continue; }
+
+      const circularity = (4 * Math.PI * area) / (peri * peri);
+      const fillRatio = area / (Math.PI * rr * rr);
+      if(circularity < (opts.circularityMin || 0.55)){ cnt.delete(); continue; }
+      if(fillRatio < (opts.fillMin || 0.50)){ cnt.delete(); continue; }
+
+      const fullCircle = { x: rx / scale, y: ry / scale, r: rr / scale };
+      const info = sampleBallInfo(fullCircle.x, fullCircle.y, fullCircle.r);
+      if(!info){ cnt.delete(); continue; }
+      if(info.sMean > (opts.sMeanMax || 95)){ cnt.delete(); continue; }
+      if(info.vMean < (opts.vMeanMin || 150)){ cnt.delete(); continue; }
+      if(info.whiteRatio < (opts.whiteRatioMin || 0.45)){ cnt.delete(); continue; }
+
+      const distCenter = Math.hypot(rx - cx0, ry - cy0);
+      const distBase = baseBall ? Math.hypot(fullCircle.x - baseBall.x, fullCircle.y - baseBall.y) : distCenter / scale;
+      const radiusRatio = baseBall ? (fullCircle.r / Math.max(1, baseBall.r)) : 1;
+      if(baseBall && distBase > (opts.maxDist || Math.max(baseBall.r * 6, 140))){ cnt.delete(); continue; }
+      if(baseBall && (radiusRatio < (opts.minRadiusRatio || 0.55) || radiusRatio > (opts.maxRadiusRatio || 1.65))){ cnt.delete(); continue; }
+
+      const score =
+        circularity * 220 +
+        fillRatio * 160 +
+        info.whiteRatio * 120 -
+        distBase * 0.9 -
+        Math.abs(radiusRatio - 1) * 140 -
+        distCenter * (opts.centerPenalty || 0);
+
       if(!best || score > best.score){
-        best = { x: cx/scale, y: cy/scale, r: radius/scale, score, circularity, area: area/(scale*scale) };
+        best = {
+          x: fullCircle.x,
+          y: fullCircle.y,
+          r: fullCircle.r,
+          score,
+          circularity,
+          fillRatio,
+          ...info
+        };
       }
+
       cnt.delete();
     }
 
-    src.delete(); hsv.delete(); low.delete(); high.delete(); mask.delete(); kernel.delete(); contours.delete(); hierarchy.delete();
+    roi.delete();
+    contours.delete();
+    hierarchy.delete();
+    return best;
+  }
+
+  function findCenteredBall(){
+    const { src, scale, w, h } = getFrameMat(720);
+    const mask = buildWhiteMask(src, 80, 160);
+
+    const side = Math.min(w, h);
+    const roiSize = side * 0.56;
+    const rect = {
+      x: (w - roiSize) / 2,
+      y: (h - roiSize) / 2,
+      w: roiSize,
+      h: roiSize
+    };
+
+    const best = findBallInMask(mask, scale, rect, null, {
+      circularityMin: 0.58,
+      fillMin: 0.54,
+      sMeanMax: 90,
+      vMeanMin: 165,
+      whiteRatioMin: 0.55,
+      centerPenalty: 1.0,
+      minR: Math.max(10, side * 0.022),
+      maxR: Math.max(28, side * 0.18)
+    });
+
+    src.delete();
+    mask.delete();
+    return best;
+  }
+
+  function trackConfirmedBall(){
+    if(!confirmedBall) return null;
+
+    const { src, scale, w, h } = getFrameMat(720);
+    const satMax = clamp(Math.round(Math.max(70, confirmedBall.sMean + 30)), 50, 110);
+    const valMin = clamp(Math.round(Math.min(230, Math.max(135, confirmedBall.vMean - 50))), 120, 235);
+    const mask = buildWhiteMask(src, satMax, valMin);
+
+    const base = trackedBall || confirmedBall;
+    const px = base.x * scale;
+    const py = base.y * scale;
+    const pr = base.r * scale;
+
+    const searchRects = [];
+    const localHalf = Math.max(pr * 4.2, 70);
+    searchRects.push({ x: px - localHalf, y: py - localHalf, w: localHalf * 2, h: localHalf * 2 });
+
+    if(lostCount >= 1){
+      const wideHalf = Math.max(pr * 7.0, 150);
+      searchRects.push({ x: px - wideHalf, y: py - wideHalf, w: wideHalf * 2, h: wideHalf * 2 });
+    }
+    if(lostCount >= 3){
+      searchRects.push({ x: 0, y: 0, w, h });
+    }
+
+    let best = null;
+    for(const rect of searchRects){
+      best = findBallInMask(mask, scale, rect, confirmedBall, {
+        circularityMin: 0.45,
+        fillMin: 0.40,
+        sMeanMax: clamp(Math.round(confirmedBall.sMean + 45), 60, 115),
+        vMeanMin: clamp(Math.round(confirmedBall.vMean - 65), 110, 230),
+        whiteRatioMin: 0.35,
+        maxDist: Math.max(base.r * (lostCount >= 1 ? 8 : 5), 160),
+        minRadiusRatio: 0.50,
+        maxRadiusRatio: 1.75,
+        minR: Math.max(8, Math.min(w, h) * 0.016),
+        maxR: Math.max(28, Math.min(w, h) * 0.22)
+      });
+      if(best) break;
+    }
+
+    src.delete();
+    mask.delete();
     return best;
   }
 
@@ -403,41 +588,47 @@
           height: { ideal: 720 },
           frameRate: { ideal: 30, max: 30 }
         },
-        audio:false
+        audio: false
       });
+
       video.srcObject = stream;
       await video.play();
       camOn = true;
       camBtn.textContent = '캠 끄기';
       camBtn.classList.add('off');
-      if(cvReady) findBtn.disabled = false;
-      modeText.textContent = '캠 대기';
+      if(cvReady) actionBtn.disabled = false;
+      modeText.textContent = '캠 준비 완료';
+      posText.textContent = '—';
+      debug.textContent = '공을 찾으려면 공 찾기를 누르세요.';
       resizeOverlay();
-    } catch(e){
-      debug.textContent = '카메라 실패: ' + e + '\n(HTTPS/localhost 환경인지 확인하세요)';
+    } catch (e) {
+      debug.textContent = '카메라 실행 실패: ' + e + '\n(스마트폰에서는 HTTPS 또는 localhost 환경이 필요합니다.)';
     }
   }
 
   function stopCam(){
     if(video.srcObject){
-      try{ video.srcObject.getTracks().forEach(t=>t.stop()); }catch(_e){}
+      try{ video.srcObject.getTracks().forEach(track => track.stop()); } catch(_e){}
       video.srcObject = null;
     }
     stream = null;
     camOn = false;
     mode = 'idle';
-    lastCandidates = [];
-    selectedBall = null;
-    lastTracked = null;
+    currentCandidate = null;
+    confirmedBall = null;
+    trackedBall = null;
+    lostCount = 0;
+    lastAt = 0;
+
     camBtn.textContent = '캠 켜기';
     camBtn.classList.remove('off');
-    findBtn.textContent = '공 찾기';
-    findBtn.classList.remove('yellow');
-    findBtn.classList.add('green');
-    findBtn.disabled = !cvReady;
+
+    actionBtn.textContent = '공 찾기';
+    actionBtn.classList.remove('finding', 'tracking');
+    actionBtn.disabled = !cvReady;
+
     modeText.textContent = '대기';
-    candText.textContent = '—';
-    trackText.textContent = '—';
+    posText.textContent = '—';
     debug.textContent = '';
     clearOverlay();
   }
@@ -445,92 +636,85 @@
   function startFinding(){
     if(!camOn || !cvReady) return;
     mode = 'finding';
-    selectedBall = null;
-    lastTracked = null;
-    findBtn.textContent = '공 확인';
-    findBtn.classList.remove('green');
-    findBtn.classList.add('yellow');
-    modeText.textContent = '공 후보 찾는 중';
-    trackText.textContent = '—';
-    debug.textContent = '흰색 단색공처럼 보이는 원 1개만 표시합니다. 동그라미가 공과 맞으면 공 확인을 누르세요.';
+    currentCandidate = null;
+    confirmedBall = null;
+    trackedBall = null;
+    lostCount = 0;
+    actionBtn.textContent = '공 확인';
+    actionBtn.classList.add('finding');
+    actionBtn.classList.remove('tracking');
+    modeText.textContent = '중앙의 공 찾는 중';
+    posText.textContent = '—';
+    debug.textContent = '흰색 공 1개를 화면 중앙에 두세요. 공 둘레에 초록 원이 맞으면 공 확인을 누르세요.';
+    drawFindingOverlay();
   }
 
   function confirmBall(){
-    if(!lastCandidates.length) {
-      debug.textContent = '현재 흰색 공 후보가 없습니다. 공을 화면에 더 크게 보이게 하거나 배경을 단순하게 해 보세요.';
+    if(!currentCandidate){
+      debug.textContent = '아직 공 후보가 없습니다. 흰색 공을 화면 중앙에 조금 더 크게 보여 주세요.';
       return;
     }
-    const best = lastCandidates[0];
-    const info = sampleBallInfo(best.x, best.y, best.r);
-    if(!info){
-      debug.textContent = '공 정보 저장에 실패했습니다.';
-      return;
-    }
-    selectedBall = { ...best, ...info };
-    lastTracked = { x: best.x, y: best.y, r: best.r };
+    confirmedBall = { ...currentCandidate };
+    trackedBall = { x: currentCandidate.x, y: currentCandidate.y, r: currentCandidate.r };
+    lostCount = 0;
     mode = 'tracking';
-    findBtn.textContent = '다시 찾기';
-    findBtn.classList.remove('yellow');
-    findBtn.classList.add('green');
+    actionBtn.textContent = '다시 찾기';
+    actionBtn.classList.remove('finding');
+    actionBtn.classList.add('tracking');
     modeText.textContent = '공 추적 중';
-    candText.textContent = '확정';
-    trackText.textContent = `x ${best.x.toFixed(0)}, y ${best.y.toFixed(0)}`;
-    drawTracking(lastTracked, false);
-    debug.textContent = `공 확정: 중심(${best.x.toFixed(0)}, ${best.y.toFixed(0)}), 반지름 ${best.r.toFixed(0)}px`;
+    posText.textContent = `x ${trackedBall.x.toFixed(0)}, y ${trackedBall.y.toFixed(0)}`;
+    debug.textContent = `공 확인 완료 · x ${trackedBall.x.toFixed(0)}, y ${trackedBall.y.toFixed(0)}, r ${trackedBall.r.toFixed(0)}`;
+    drawTrackingOverlay(false);
   }
-
-  camBtn.addEventListener('click', ()=> camOn ? stopCam() : startCam());
-  findBtn.addEventListener('click', ()=> {
-    if(mode !== 'finding' && mode !== 'tracking') startFinding();
-    else if(mode === 'finding') confirmBall();
-    else startFinding();
-  });
-  window.addEventListener('resize', resizeOverlay);
 
   function processFinding(){
     const t0 = performance.now();
-    lastCandidates = findBallCandidates();
-    drawFinding(lastCandidates);
-    candText.textContent = lastCandidates.length ? '1' : '0';
-    trackText.textContent = '—';
+    currentCandidate = findCenteredBall();
+    drawFindingOverlay();
     const t1 = performance.now();
-    debug.textContent = lastCandidates.length
-      ? `흰색 공 후보 1개 · ${(t1 - t0).toFixed(0)}ms · 민감도 ${hough2.value}`
-      : `흰색 공 후보 없음 · ${(t1 - t0).toFixed(0)}ms · 민감도 ${hough2.value}`;
+    if(currentCandidate){
+      posText.textContent = `x ${currentCandidate.x.toFixed(0)}, y ${currentCandidate.y.toFixed(0)}`;
+      debug.textContent = `중앙 후보 발견 · x ${currentCandidate.x.toFixed(0)}, y ${currentCandidate.y.toFixed(0)}, r ${currentCandidate.r.toFixed(0)} · ${(t1 - t0).toFixed(0)}ms`;
+    } else {
+      posText.textContent = '—';
+      debug.textContent = `중앙에서 공 후보를 찾는 중 · ${(t1 - t0).toFixed(0)}ms`;
+    }
   }
 
   function processTracking(){
     const t0 = performance.now();
-    const ball = trackSelectedBall();
+    const found = trackConfirmedBall();
     const t1 = performance.now();
-    if(ball){
-      lastTracked = ball;
-      drawTracking(ball, false);
-      trackText.textContent = `x ${ball.x.toFixed(0)}, y ${ball.y.toFixed(0)}`;
-      debug.textContent = `추적 성공 · x ${ball.x.toFixed(0)}, y ${ball.y.toFixed(0)}, r ${ball.r.toFixed(0)} · ${(t1 - t0).toFixed(0)}ms`;
-    } else if(lastTracked){
-      drawTracking(lastTracked, true);
-      trackText.textContent = '잠시 놓침';
-      debug.textContent = `추적 실패 · 마지막 위치 유지 · ${(t1 - t0).toFixed(0)}ms`;
+
+    if(found){
+      trackedBall = found;
+      lostCount = 0;
+      posText.textContent = `x ${trackedBall.x.toFixed(0)}, y ${trackedBall.y.toFixed(0)}`;
+      drawTrackingOverlay(false);
+      debug.textContent = `추적 성공 · x ${trackedBall.x.toFixed(0)}, y ${trackedBall.y.toFixed(0)}, r ${trackedBall.r.toFixed(0)} · ${(t1 - t0).toFixed(0)}ms`;
     } else {
-      clearOverlay();
-      trackText.textContent = '놓침';
-      debug.textContent = `추적 실패 · ${(t1 - t0).toFixed(0)}ms`;
+      lostCount += 1;
+      drawTrackingOverlay(true);
+      if(trackedBall){
+        posText.textContent = `x ${trackedBall.x.toFixed(0)}, y ${trackedBall.y.toFixed(0)}`;
+      } else {
+        posText.textContent = '—';
+      }
+      debug.textContent = `추적 실패 · 마지막 위치 유지 · ${(t1 - t0).toFixed(0)}ms`;
     }
   }
 
   function loop(ts){
     requestAnimationFrame(loop);
     if(!camOn || !cvReady || busy) return;
-    const p = Number(period.value);
-    if(ts - lastAt < p) return;
+    if(ts - lastAt < PROCESS_MS) return;
     lastAt = ts;
     busy = true;
     try{
       if(mode === 'finding') processFinding();
       else if(mode === 'tracking') processTracking();
       else clearOverlay();
-    } catch(e){
+    } catch (e) {
       console.error(e);
       debug.textContent = '처리 오류: ' + e;
     } finally {
@@ -543,18 +727,24 @@
       cv['onRuntimeInitialized'] = () => {
         cvReady = true;
         cvStatus.textContent = '준비됨';
-        if(camOn) findBtn.disabled = false;
+        if(camOn) actionBtn.disabled = false;
       };
       if(cv.getBuildInformation){
-        // onRuntimeInitialized already fired in some builds
         cvReady = true;
         cvStatus.textContent = '준비됨';
-        if(camOn) findBtn.disabled = false;
+        if(camOn) actionBtn.disabled = false;
       }
     } else {
       setTimeout(waitForCv, 100);
     }
   }
+
+  camBtn.addEventListener('click', () => camOn ? stopCam() : startCam());
+  actionBtn.addEventListener('click', () => {
+    if(mode === 'finding') confirmBall();
+    else startFinding();
+  });
+  window.addEventListener('resize', resizeOverlay);
 
   resizeOverlay();
   waitForCv();

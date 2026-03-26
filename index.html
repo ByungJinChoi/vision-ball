@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
-  <title>9분할 공 탐지 테스트 v4 (Motion Contour)</title>
+  <title>9분할 공 추적 테스트 v4 (색상+원형)</title>
 
   <style>
     :root{
@@ -12,6 +12,8 @@
       --muted:#9ca3af;
       --blue:#2563eb;
       --red:#ef4444;
+      --green:#10b981;
+      --amber:#f59e0b;
     }
     *{ box-sizing:border-box; }
     html,body{ height:100%; margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--fg); }
@@ -38,6 +40,8 @@
       box-shadow:0 6px 18px rgba(0,0,0,.25);
     }
     .btn.off{ background:var(--red); }
+    .btn.green{ background:var(--green); }
+    .btn.amber{ background:var(--amber); color:#111827; }
 
     .pill{
       display:inline-flex;
@@ -67,7 +71,7 @@
       flex-wrap:wrap;
     }
     label{ font-size:12px; color:var(--muted); font-weight:800; }
-    input[type="range"]{ width: 180px; }
+    input[type="range"]{ width: 170px; }
     code{
       color:#d1fae5;
       background: rgba(16,185,129,.12);
@@ -118,12 +122,14 @@
 
 <body>
   <header>
-    <div class="title">🎥 9분할 공 탐지 테스트 v4 (움직임 외곽선 방식)</div>
+    <div class="title">🎥 9분할 공 추적 테스트 v4 (색상+원형)</div>
     <div class="spacer"></div>
 
     <button id="camBtn" class="btn">캠 켜기</button>
+    <button id="learnBtn" class="btn green">공 확인하기</button>
+    <button id="resetBtn" class="btn amber">공 기준 초기화</button>
 
-    <span class="pill"><span class="muted">엔진</span> <span id="modelStatus">준비중…</span></span>
+    <span class="pill"><span class="muted">기준</span> <span id="modelStatus">대기중</span></span>
     <span class="pill"><span class="muted">탐지</span> <span id="detCount">—</span></span>
     <span class="pill"><span class="muted">선택</span> <span id="pickText">—</span></span>
     <span class="pill"><span class="muted">밝기</span> <span id="lightText">—</span></span>
@@ -132,16 +138,16 @@
   <main>
     <div class="row">
       <label>탐지 주기(ms)</label>
-      <input id="period" type="range" min="120" max="1200" step="40" value="320">
-      <code id="periodVal">320</code>
+      <input id="period" type="range" min="80" max="600" step="20" value="160">
+      <code id="periodVal">160</code>
 
-      <label>움직임 임계값</label>
-      <input id="thr" type="range" min="10" max="80" step="1" value="28">
-      <code id="thrVal">28</code>
+      <label>색상 허용범위</label>
+      <input id="thr" type="range" min="8" max="50" step="1" value="22">
+      <code id="thrVal">22</code>
 
       <label>최대 후보</label>
-      <input id="topk" type="range" min="5" max="30" step="1" value="20">
-      <code id="topkVal">20</code>
+      <input id="topk" type="range" min="3" max="20" step="1" value="10">
+      <code id="topkVal">10</code>
     </div>
 
     <div class="stage" id="stage">
@@ -151,11 +157,11 @@
 
     <div class="footer">
       <div class="small">
-- 감지 방식: <code>배경 차분 + 움직이는 물체 외곽선(contour)</code>
-- 표시: 움직이는 후보 여러 개면 모두 외곽선 표시, 가장 원형에 가까운 1개를 선택(하이라이트)
+- 공 확인하기: 화면 중앙 가이드 원 안에 공을 두고 클릭
+- 추적 방식: 저장된 공 색상(HSV) + 원형도 + 면적 조건으로 공 후보 선택
+- 표시: 후보 여러 개면 외곽선 표시, 가장 적합한 1개를 하이라이트
 - 9분할: <code>1~9</code> 번호 + 선택된 공의 칸 하이라이트
-- 밝기/그림자: 선택된 ROI 평균 밝기 vs 주변(확장 박스) 평균 대비로 <code>밝음/보통/어두움</code>
-- 참고: 이 방식은 <code>움직이는 공</code>에 최적화되어 있어 정지하면 외곽선이 약해질 수 있습니다.
+- 밝기/그림자: 공 ROI 평균 밝기 vs 주변(확장 박스) 평균 대비로 <code>밝음/보통/어두움</code>
       </div>
       <div class="small" id="debug"></div>
     </div>
@@ -169,6 +175,8 @@
   const octx = overlay.getContext('2d');
 
   const camBtn = document.getElementById('camBtn');
+  const learnBtn = document.getElementById('learnBtn');
+  const resetBtn = document.getElementById('resetBtn');
 
   const modelStatus = document.getElementById('modelStatus');
   const detCount = document.getElementById('detCount');
@@ -183,28 +191,22 @@
   const topk = document.getElementById('topk');
   const topkVal = document.getElementById('topkVal');
 
-  period.addEventListener('input', () => periodVal.textContent = period.value);
-  thr.addEventListener('input', () => thrVal.textContent = thr.value);
-  topk.addEventListener('input', () => topkVal.textContent = topk.value);
+  period.addEventListener('input', ()=> periodVal.textContent = period.value);
+  thr.addEventListener('input', ()=> thrVal.textContent = Number(thr.value).toFixed(0));
+  topk.addEventListener('input', ()=> topkVal.textContent = topk.value);
 
   let stream = null;
   let camOn = false;
   let busy = false;
   let lastDetectAt = 0;
 
-  let bgGray = null;
-  let motionW = 0;
-  let motionH = 0;
+  let ballProfile = null;
+  let lastBest = null;
 
-  // 밝기 측정용(작게)
   const snap = document.createElement('canvas');
   const sctx = snap.getContext('2d', { willReadFrequently:true });
 
-  // 움직임 분석용(작게)
-  const motionCanvas = document.createElement('canvas');
-  const mctx = motionCanvas.getContext('2d', { willReadFrequently:true });
-
-  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+  function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
 
   function resizeOverlay(){
     const dpr = Math.max(1, window.devicePixelRatio || 1);
@@ -214,23 +216,22 @@
     overlay.height = Math.round(h * dpr);
     overlay.style.width = w + 'px';
     overlay.style.height = h + 'px';
-    octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    octx.setTransform(dpr,0,0,dpr,0,0);
   }
 
-  // object-fit: contain 영역
   function getDisplayRect(){
     const vw = video.videoWidth || 0;
     const vh = video.videoHeight || 0;
     const ww = stage.clientWidth || 1;
     const wh = stage.clientHeight || 1;
-    if(vw <= 0 || vh <= 0) return { left:0, top:0, width:ww, height:wh, scaleX:1, scaleY:1 };
+    if(vw <= 0 || vh <= 0) return {left:0, top:0, width:ww, height:wh, scaleX:1, scaleY:1};
 
     const s = Math.min(ww / vw, wh / vh);
     const dw = vw * s;
     const dh = vh * s;
     const left = (ww - dw) / 2;
     const top  = (wh - dh) / 2;
-    return { left, top, width:dw, height:dh, scaleX:s, scaleY:s };
+    return {left, top, width:dw, height:dh, scaleX:s, scaleY:s};
   }
 
   function zoneFromPoint(cx, cy, vw, vh){
@@ -259,17 +260,17 @@
     octx.textAlign = 'center';
     octx.textBaseline = 'middle';
 
-    for(let r = 0; r < 3; r++){
-      for(let c = 0; c < 3; c++){
-        const n = r * 3 + c + 1;
-        const cx = x0 + (c + 0.5) * (w / 3);
-        const cy = y0 + (r + 0.5) * (h / 3);
+    for(let r=0;r<3;r++){
+      for(let c=0;c<3;c++){
+        const n = r*3 + c + 1;
+        const cx = x0 + (c+0.5)*(w/3);
+        const cy = y0 + (r+0.5)*(h/3);
 
         octx.fillStyle = 'rgba(0,0,0,0.28)';
         octx.strokeStyle = 'rgba(255,255,255,0.22)';
         octx.lineWidth = 1;
         octx.beginPath();
-        octx.arc(cx, cy, 14, 0, Math.PI * 2);
+        octx.arc(cx, cy, 14, 0, Math.PI*2);
         octx.fill();
         octx.stroke();
 
@@ -285,10 +286,10 @@
     const row = Math.floor(z / 3);
     const col = z % 3;
 
-    const x0 = rect.left + col * (rect.width / 3);
-    const y0 = rect.top  + row * (rect.height / 3);
-    const w = rect.width / 3;
-    const h = rect.height / 3;
+    const x0 = rect.left + col*(rect.width/3);
+    const y0 = rect.top  + row*(rect.height/3);
+    const w = rect.width/3;
+    const h = rect.height/3;
 
     octx.fillStyle = 'rgba(255,255,255,0.08)';
     octx.strokeStyle = 'rgba(255,255,255,0.35)';
@@ -297,62 +298,93 @@
     octx.strokeRect(x0, y0, w, h);
   }
 
-  function drawContour(rect, points, bbox, isBest, label){
-    if(!points || points.length < 2) return;
+  function drawGuide(rect){
+    const cx = rect.left + rect.width/2;
+    const cy = rect.top + rect.height/2;
+    const radius = Math.min(rect.width, rect.height) * 0.11;
+
+    octx.save();
+    octx.strokeStyle = 'rgba(255,215,0,0.95)';
+    octx.fillStyle = 'rgba(255,215,0,0.08)';
+    octx.lineWidth = 3;
+    octx.beginPath();
+    octx.arc(cx, cy, radius, 0, Math.PI*2);
+    octx.fill();
+    octx.stroke();
+
+    octx.setLineDash([6,6]);
+    octx.strokeStyle = 'rgba(255,255,255,0.65)';
+    octx.lineWidth = 1.5;
+    octx.beginPath();
+    octx.arc(cx, cy, radius*1.25, 0, Math.PI*2);
+    octx.stroke();
+    octx.setLineDash([]);
+
+    octx.fillStyle = 'rgba(0,0,0,0.6)';
+    octx.fillRect(cx - 94, cy + radius + 12, 188, 26);
+    octx.fillStyle = 'rgba(255,255,255,0.95)';
+    octx.font = '800 13px system-ui';
+    octx.textAlign = 'center';
+    octx.textBaseline = 'middle';
+    octx.fillText('공을 중앙 원 안에 두고 공 확인하기', cx, cy + radius + 25);
+    octx.restore();
+  }
+
+  function drawCircleCandidate(rect, cand, isBest, label){
+    const px = rect.left + cand.cx * rect.scaleX;
+    const py = rect.top  + cand.cy * rect.scaleY;
+    const pr = cand.radius * ((rect.scaleX + rect.scaleY) / 2) * 0.5;
+
+    octx.save();
+    octx.strokeStyle = isBest ? 'rgba(0,255,220,0.98)' : 'rgba(255,255,255,0.68)';
+    octx.fillStyle = isBest ? 'rgba(0,255,220,0.10)' : 'rgba(255,255,255,0.06)';
+    octx.lineWidth = isBest ? 3 : 2;
+    octx.beginPath();
+    octx.arc(px, py, pr, 0, Math.PI*2);
+    octx.fill();
+    octx.stroke();
+
+    octx.strokeStyle = isBest ? 'rgba(0,255,220,0.95)' : 'rgba(255,255,255,0.7)';
+    octx.lineWidth = 2;
+    octx.strokeRect(rect.left + cand.x * rect.scaleX, rect.top + cand.y * rect.scaleY, cand.w * rect.scaleX, cand.h * rect.scaleY);
 
     octx.beginPath();
-    for(let i = 0; i < points.length; i++){
-      const p = points[i];
-      const px = rect.left + p[0] * rect.scaleX;
-      const py = rect.top  + p[1] * rect.scaleY;
-      if(i === 0) octx.moveTo(px, py);
-      else octx.lineTo(px, py);
-    }
-    octx.closePath();
-
-    octx.strokeStyle = isBest ? 'rgba(0,255,220,0.95)' : 'rgba(255,255,255,0.70)';
-    octx.lineWidth = isBest ? 3 : 2;
-
-    if(isBest){
-      octx.fillStyle = 'rgba(0,255,220,0.10)';
-      octx.fill();
-    }
+    octx.moveTo(px-10, py); octx.lineTo(px+10, py);
+    octx.moveTo(px, py-10); octx.lineTo(px, py+10);
     octx.stroke();
 
     if(label){
-      const [x, y] = bbox;
-      const rx = rect.left + x * rect.scaleX;
-      const ry = rect.top  + y * rect.scaleY;
-      const pad = 4;
       octx.font = '800 12px system-ui';
       octx.textAlign = 'left';
       octx.textBaseline = 'top';
+      const pad = 4;
       const tw = octx.measureText(label).width;
-      octx.fillStyle = isBest ? 'rgba(0,0,0,0.60)' : 'rgba(0,0,0,0.40)';
-      octx.fillRect(rx, Math.max(0, ry - 20), tw + pad * 2, 18);
+      const lx = rect.left + cand.x * rect.scaleX;
+      const ly = rect.top + cand.y * rect.scaleY;
+      octx.fillStyle = 'rgba(0,0,0,0.58)';
+      octx.fillRect(lx, ly, tw + pad*2, 16 + pad);
       octx.fillStyle = 'rgba(255,255,255,0.95)';
-      octx.fillText(label, rx + pad, Math.max(0, ry - 18));
+      octx.fillText(label, lx + pad, ly + 2);
     }
+    octx.restore();
   }
 
   function meanLuma(imgData){
     const d = imgData.data;
     let sum = 0;
     const n = d.length / 4;
-    for(let i = 0; i < d.length; i += 4){
-      const r = d[i];
-      const g = d[i + 1];
-      const b = d[i + 2];
-      sum += (0.299 * r + 0.587 * g + 0.114 * b);
+    for(let i=0;i<d.length;i+=4){
+      const r=d[i], g=d[i+1], b=d[i+2];
+      sum += (0.299*r + 0.587*g + 0.114*b);
     }
     return n ? (sum / n) : 0;
   }
 
   function brightnessLabel(roiMean, bgMean){
     const diff = roiMean - bgMean;
-    if(diff > 18) return { label:'밝음', diff };
-    if(diff < -18) return { label:'어두움', diff };
-    return { label:'보통', diff };
+    if(diff > 18) return {label:'밝음', diff};
+    if(diff < -18) return {label:'어두움', diff};
+    return {label:'보통', diff};
   }
 
   function computeBrightness(vw, vh, bbox){
@@ -365,421 +397,361 @@
     }
     sctx.drawImage(video, 0, 0, targetW, targetH);
 
-    const [x, y, w, h] = bbox;
-
-    const sx = clamp(Math.round(x * sc), 0, targetW - 1);
-    const sy = clamp(Math.round(y * sc), 0, targetH - 1);
+    const [x,y,w,h] = bbox;
+    const sx = clamp(Math.round(x * sc), 0, targetW-1);
+    const sy = clamp(Math.round(y * sc), 0, targetH-1);
     const sw = clamp(Math.round(w * sc), 1, targetW - sx);
     const sh = clamp(Math.round(h * sc), 1, targetH - sy);
 
     const roi = sctx.getImageData(sx, sy, sw, sh);
     const roiMean = meanLuma(roi);
 
-    const ex = clamp(Math.round(sx - sw * 0.18), 0, targetW - 1);
-    const ey = clamp(Math.round(sy - sh * 0.18), 0, targetH - 1);
-    const ew = clamp(Math.round(sw * 1.36), 1, targetW - ex);
-    const eh = clamp(Math.round(sh * 1.36), 1, targetH - ey);
+    const ex = clamp(Math.round(sx - sw*0.18), 0, targetW-1);
+    const ey = clamp(Math.round(sy - sh*0.18), 0, targetH-1);
+    const ew = clamp(Math.round(sw*1.36), 1, targetW - ex);
+    const eh = clamp(Math.round(sh*1.36), 1, targetH - ey);
 
     const bg = sctx.getImageData(ex, ey, ew, eh);
     const bgMean = meanLuma(bg);
-
     const r = brightnessLabel(roiMean, bgMean);
-    return { roiMean, bgMean, diff:r.diff, label:r.label };
+    return {roiMean, bgMean, diff:r.diff, label:r.label};
   }
 
-  function prepareMotionCanvas(vw, vh){
-    const targetW = 320;
-    const targetH = Math.max(1, Math.round(vh * (targetW / Math.max(1, vw))));
+  function rgbToHsv(r, g, b){
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r,g,b), min = Math.min(r,g,b);
+    const d = max - min;
+    let h = 0;
+    const s = max === 0 ? 0 : d / max;
+    const v = max;
 
-    if(motionCanvas.width !== targetW || motionCanvas.height !== targetH){
-      motionCanvas.width = targetW;
-      motionCanvas.height = targetH;
-      motionW = targetW;
-      motionH = targetH;
-      bgGray = null;
+    if(d !== 0){
+      switch(max){
+        case r: h = ((g - b) / d) % 6; break;
+        case g: h = (b - r) / d + 2; break;
+        case b: h = (r - g) / d + 4; break;
+      }
+      h *= 60;
+      if(h < 0) h += 360;
+    }
+    return { h, s: s*100, v: v*100 };
+  }
+
+  function hueDist(a, b){
+    let d = Math.abs(a - b);
+    if(d > 180) d = 360 - d;
+    return d;
+  }
+
+  function getFrameToCanvas(vw, vh){
+    const targetW = Math.min(480, Math.max(220, Math.round(vw * 0.42)));
+    const scale = targetW / Math.max(1, vw);
+    const targetH = Math.max(1, Math.round(vh * scale));
+    if(snap.width !== targetW || snap.height !== targetH){
+      snap.width = targetW;
+      snap.height = targetH;
+    }
+    sctx.drawImage(video, 0, 0, targetW, targetH);
+    return { cw: targetW, ch: targetH, scaleX: vw / targetW, scaleY: vh / targetH, imageData: sctx.getImageData(0, 0, targetW, targetH) };
+  }
+
+  function learnBallProfile(){
+    if(!camOn || video.readyState < 2){
+      debug.textContent = '카메라가 준비된 뒤 공 확인하기를 눌러 주세요.';
+      return;
     }
 
-    return {
-      w: motionCanvas.width,
-      h: motionCanvas.height,
-      scaleBackX: vw / motionCanvas.width,
-      scaleBackY: vh / motionCanvas.height
+    const vw = video.videoWidth || 0;
+    const vh = video.videoHeight || 0;
+    if(vw <= 0 || vh <= 0) return;
+
+    const { cw, ch, imageData } = getFrameToCanvas(vw, vh);
+    const data = imageData.data;
+    const cx = Math.round(cw / 2);
+    const cy = Math.round(ch / 2);
+    const radius = Math.max(8, Math.round(Math.min(cw, ch) * 0.07));
+
+    let hueX = 0, hueY = 0, sSum = 0, vSum = 0, count = 0;
+    let minX = cw, minY = ch, maxX = 0, maxY = 0;
+
+    for(let y = cy - radius; y <= cy + radius; y++){
+      if(y < 0 || y >= ch) continue;
+      for(let x = cx - radius; x <= cx + radius; x++){
+        if(x < 0 || x >= cw) continue;
+        const dx = x - cx, dy = y - cy;
+        if(dx*dx + dy*dy > radius*radius) continue;
+        const idx = (y*cw + x) * 4;
+        const hsv = rgbToHsv(data[idx], data[idx+1], data[idx+2]);
+        const rad = hsv.h * Math.PI / 180;
+        hueX += Math.cos(rad);
+        hueY += Math.sin(rad);
+        sSum += hsv.s;
+        vSum += hsv.v;
+        count++;
+        if(x < minX) minX = x;
+        if(y < minY) minY = y;
+        if(x > maxX) maxX = x;
+        if(y > maxY) maxY = y;
+      }
+    }
+
+    if(!count){
+      debug.textContent = '공 기준을 읽지 못했습니다. 중앙에 공을 더 크게 보여 주세요.';
+      return;
+    }
+
+    let hue = Math.atan2(hueY / count, hueX / count) * 180 / Math.PI;
+    if(hue < 0) hue += 360;
+
+    const estRadius = Math.max(10, Math.round(((maxX - minX) + (maxY - minY)) / 4));
+
+    ballProfile = {
+      h: hue,
+      s: sSum / count,
+      v: vSum / count,
+      learnedRadius: estRadius,
+      minArea: Math.max(120, Math.round(Math.PI * estRadius * estRadius * 0.30)),
+      maxArea: Math.max(1800, Math.round(Math.PI * estRadius * estRadius * 8.5)),
+      minCircularity: 0.48,
+      sampleCount: count
     };
+
+    modelStatus.textContent = `저장됨 H${ballProfile.h.toFixed(0)} S${ballProfile.s.toFixed(0)} V${ballProfile.v.toFixed(0)}`;
+    debug.textContent = `공 기준 저장 완료 · hue ${ballProfile.h.toFixed(1)} · sat ${ballProfile.s.toFixed(1)} · val ${ballProfile.v.toFixed(1)} · 반지름 ${ballProfile.learnedRadius}px`;
   }
 
-  function captureGray(){
-    mctx.drawImage(video, 0, 0, motionCanvas.width, motionCanvas.height);
-    const img = mctx.getImageData(0, 0, motionCanvas.width, motionCanvas.height);
-    const src = img.data;
-    const gray = new Uint8ClampedArray(motionCanvas.width * motionCanvas.height);
-
-    for(let i = 0, j = 0; i < src.length; i += 4, j++){
-      gray[j] = Math.round(src[i] * 0.299 + src[i + 1] * 0.587 + src[i + 2] * 0.114);
-    }
-    return gray;
-  }
-
-  function buildMotionMask(gray, threshold){
-    const len = gray.length;
-
-    if(!bgGray || bgGray.length !== len){
-      bgGray = new Float32Array(len);
-      for(let i = 0; i < len; i++) bgGray[i] = gray[i];
-      return null;
-    }
-
-    const mask = new Uint8Array(len);
-    const diff = new Uint8Array(len);
-    let motionPixels = 0;
-
-    const alphaStill = 0.18;
-    const alphaMove = 0.02;
-
-    for(let i = 0; i < len; i++){
-      const delta = Math.abs(gray[i] - bgGray[i]);
-      diff[i] = delta;
-
-      if(delta >= threshold){
-        mask[i] = 1;
-        motionPixels++;
-        bgGray[i] = bgGray[i] * (1 - alphaMove) + gray[i] * alphaMove;
-      }else{
-        bgGray[i] = bgGray[i] * (1 - alphaStill) + gray[i] * alphaStill;
-      }
-    }
-
-    return { mask, diff, motionPixels };
-  }
-
-  function dilate(src, w, h){
-    const dst = new Uint8Array(src.length);
-    for(let y = 1; y < h - 1; y++){
-      for(let x = 1; x < w - 1; x++){
+  function dilate(mask, w, h){
+    const out = new Uint8Array(mask.length);
+    for(let y=0; y<h; y++){
+      for(let x=0; x<w; x++){
         let on = 0;
-        for(let yy = -1; yy <= 1 && !on; yy++){
-          for(let xx = -1; xx <= 1; xx++){
-            if(src[(y + yy) * w + (x + xx)]){ on = 1; break; }
+        for(let dy=-1; dy<=1 && !on; dy++){
+          const yy = y + dy;
+          if(yy < 0 || yy >= h) continue;
+          for(let dx=-1; dx<=1; dx++){
+            const xx = x + dx;
+            if(xx < 0 || xx >= w) continue;
+            if(mask[yy*w + xx]){ on = 1; break; }
           }
         }
-        dst[y * w + x] = on;
+        out[y*w + x] = on;
       }
     }
-    return dst;
-  }
-
-  function erode(src, w, h){
-    const dst = new Uint8Array(src.length);
-    for(let y = 1; y < h - 1; y++){
-      for(let x = 1; x < w - 1; x++){
-        let on = 1;
-        for(let yy = -1; yy <= 1 && on; yy++){
-          for(let xx = -1; xx <= 1; xx++){
-            if(!src[(y + yy) * w + (x + xx)]){ on = 0; break; }
-          }
-        }
-        dst[y * w + x] = on;
-      }
-    }
-    return dst;
-  }
-
-  function cleanMask(mask, w, h){
-    let out = dilate(mask, w, h);
-    out = erode(out, w, h);
-    out = dilate(out, w, h);
     return out;
   }
 
-  function convexHull(points){
-    if(!points || points.length < 3) return points ? points.slice() : [];
-
-    const pts = [];
-    for(let i = 0; i < points.length; i++){
-      const p = points[i];
-      pts.push({ x:p[0], y:p[1] });
-    }
-
-    pts.sort((a, b) => a.x === b.x ? a.y - b.y : a.x - b.x);
-
-    const uniq = [];
-    for(let i = 0; i < pts.length; i++){
-      const p = pts[i];
-      const last = uniq[uniq.length - 1];
-      if(!last || last.x !== p.x || last.y !== p.y) uniq.push(p);
-    }
-    if(uniq.length < 3) return uniq.map(p => [p.x, p.y]);
-
-    const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-
-    const lower = [];
-    for(let i = 0; i < uniq.length; i++){
-      const p = uniq[i];
-      while(lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0){
-        lower.pop();
-      }
-      lower.push(p);
-    }
-
-    const upper = [];
-    for(let i = uniq.length - 1; i >= 0; i--){
-      const p = uniq[i];
-      while(upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0){
-        upper.pop();
-      }
-      upper.push(p);
-    }
-
-    const hull = lower.slice(0, -1).concat(upper.slice(0, -1));
-    return hull.map(p => [p.x, p.y]);
-  }
-
-  function polygonArea(points){
-    if(!points || points.length < 3) return 0;
-    let sum = 0;
-    for(let i = 0; i < points.length; i++){
-      const a = points[i];
-      const b = points[(i + 1) % points.length];
-      sum += a[0] * b[1] - a[1] * b[0];
-    }
-    return Math.abs(sum) * 0.5;
-  }
-
-  function polygonPerimeter(points){
-    if(!points || points.length < 2) return 0;
-    let sum = 0;
-    for(let i = 0; i < points.length; i++){
-      const a = points[i];
-      const b = points[(i + 1) % points.length];
-      const dx = b[0] - a[0];
-      const dy = b[1] - a[1];
-      sum += Math.hypot(dx, dy);
-    }
-    return sum;
-  }
-
-  function extractCandidates(mask, diff, w, h, scaleBackX, scaleBackY, vw, vh, maxK){
-    const visited = new Uint8Array(mask.length);
-    const candidates = [];
-
-    const minArea = Math.max(36, Math.round(w * h * 0.0010));
-    const maxArea = Math.max(minArea + 1, Math.round(w * h * 0.30));
-
-    for(let y = 1; y < h - 1; y++){
-      for(let x = 1; x < w - 1; x++){
-        const start = y * w + x;
-        if(!mask[start] || visited[start]) continue;
-
-        const stack = [start];
-        visited[start] = 1;
-
-        let area = 0;
-        let sumX = 0;
-        let sumY = 0;
-        let diffSum = 0;
-        let minX = x, minY = y, maxX = x, maxY = y;
-        const boundary = [];
-
-        while(stack.length){
-          const idx = stack.pop();
-          const py = (idx / w) | 0;
-          const px = idx - py * w;
-
-          area++;
-          sumX += px;
-          sumY += py;
-          diffSum += diff[idx];
-          if(px < minX) minX = px;
-          if(py < minY) minY = py;
-          if(px > maxX) maxX = px;
-          if(py > maxY) maxY = py;
-
-          let isBoundary = false;
-
-          for(let yy = -1; yy <= 1; yy++){
-            for(let xx = -1; xx <= 1; xx++){
-              if(xx === 0 && yy === 0) continue;
-              const nx = px + xx;
-              const ny = py + yy;
-              if(nx < 0 || ny < 0 || nx >= w || ny >= h){
-                isBoundary = true;
-                continue;
-              }
-              const nidx = ny * w + nx;
-              if(!mask[nidx]){
-                isBoundary = true;
-                continue;
-              }
-              if(!visited[nidx]){
-                visited[nidx] = 1;
-                stack.push(nidx);
-              }
-            }
-          }
-
-          if(isBoundary && ((px + py) % 2 === 0)){
-            boundary.push([(px + 0.5) * scaleBackX, (py + 0.5) * scaleBackY]);
+  function erode(mask, w, h){
+    const out = new Uint8Array(mask.length);
+    for(let y=0; y<h; y++){
+      for(let x=0; x<w; x++){
+        let on = 1;
+        for(let dy=-1; dy<=1 && on; dy++){
+          const yy = y + dy;
+          if(yy < 0 || yy >= h){ on = 0; break; }
+          for(let dx=-1; dx<=1; dx++){
+            const xx = x + dx;
+            if(xx < 0 || xx >= w || !mask[yy*w + xx]){ on = 0; break; }
           }
         }
+        out[y*w + x] = on;
+      }
+    }
+    return out;
+  }
 
-        if(area < minArea || area > maxArea) continue;
-        if(boundary.length < 6) continue;
+  function closeOpen(mask, w, h){
+    let t = dilate(mask, w, h);
+    t = erode(t, w, h);
+    t = erode(t, w, h);
+    t = dilate(t, w, h);
+    return t;
+  }
 
-        const hull = convexHull(boundary);
-        if(hull.length < 3) continue;
+  function componentCandidates(mask, cw, ch, scaleX, scaleY){
+    const visited = new Uint8Array(mask.length);
+    const candidates = [];
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]];
 
-        const bwPx = maxX - minX + 1;
-        const bhPx = maxY - minY + 1;
-        if(bwPx < 4 || bhPx < 4) continue;
+    for(let y=0; y<ch; y++){
+      for(let x=0; x<cw; x++){
+        const idx = y*cw + x;
+        if(!mask[idx] || visited[idx]) continue;
 
-        const bx = minX * scaleBackX;
-        const by = minY * scaleBackY;
-        const bw = bwPx * scaleBackX;
-        const bh = bhPx * scaleBackY;
-        const cx = (sumX / area + 0.5) * scaleBackX;
-        const cy = (sumY / area + 0.5) * scaleBackY;
+        const stack = [idx];
+        visited[idx] = 1;
+        let area = 0;
+        let minX = x, minY = y, maxX = x, maxY = y;
+        let sumX = 0, sumY = 0;
+        let perimeter = 0;
 
-        const hullArea = polygonArea(hull);
-        const hullPerimeter = polygonPerimeter(hull);
-        const circularity = hullPerimeter > 0 ? clamp((4 * Math.PI * hullArea) / (hullPerimeter * hullPerimeter), 0, 1.2) : 0;
-        const aspect = 1 - Math.abs(bw - bh) / Math.max(1, Math.max(bw, bh));
-        const fillRatio = area / Math.max(1, bwPx * bhPx);
-        const fillScore = clamp(1 - Math.abs(fillRatio - 0.72) / 0.72, 0, 1);
-        const motionScore = clamp((diffSum / Math.max(1, area)) / 80, 0, 1);
-        const areaScore = clamp((area / (w * h)) / 0.012, 0.20, 1.0);
+        while(stack.length){
+          const cur = stack.pop();
+          const cx = cur % cw;
+          const cy = (cur / cw) | 0;
+          area++;
+          sumX += cx;
+          sumY += cy;
+          if(cx < minX) minX = cx;
+          if(cy < minY) minY = cy;
+          if(cx > maxX) maxX = cx;
+          if(cy > maxY) maxY = cy;
 
-        const score = clamp(
-          (circularity * 0.45) +
-          (aspect * 0.25) +
-          (fillScore * 0.15) +
-          (motionScore * 0.15),
-          0,
-          1
-        ) * areaScore;
+          let boundary = false;
+          for(const [dx,dy] of dirs){
+            const nx = cx + dx, ny = cy + dy;
+            if(nx < 0 || nx >= cw || ny < 0 || ny >= ch){ boundary = true; continue; }
+            const ni = ny*cw + nx;
+            if(!mask[ni]) boundary = true;
+            else if(!visited[ni]){ visited[ni] = 1; stack.push(ni); }
+          }
+          if(boundary) perimeter++;
+        }
+
+        const bw = maxX - minX + 1;
+        const bh = maxY - minY + 1;
+        const radius = (bw + bh) / 4;
+        const aspect = bw / Math.max(1, bh);
+        const fillRatio = area / Math.max(1, bw * bh);
+        const circularity = (4 * Math.PI * area) / Math.max(1, perimeter * perimeter);
+        const ccx = sumX / area;
+        const ccy = sumY / area;
 
         candidates.push({
-          bbox:[bx, by, bw, bh],
-          hull,
-          center:[cx, cy],
-          zone: zoneFromPoint(cx, cy, vw, vh),
-          score,
-          scorePercent: Math.round(score * 100),
-          circularity,
-          motionMean: diffSum / Math.max(1, area),
-          area,
-          aspect
+          x: minX * scaleX,
+          y: minY * scaleY,
+          w: bw * scaleX,
+          h: bh * scaleY,
+          cx: ccx * scaleX,
+          cy: ccy * scaleY,
+          radius: radius * ((scaleX + scaleY) / 2),
+          area: area * scaleX * scaleY,
+          aspect,
+          fillRatio,
+          circularity
         });
       }
     }
-
-    candidates.sort((a, b) => b.score - a.score);
-    return candidates.slice(0, maxK);
+    return candidates;
   }
 
-  function drawCenterCross(rect, cx, cy){
-    const px = rect.left + cx * rect.scaleX;
-    const py = rect.top  + cy * rect.scaleY;
-    octx.strokeStyle = 'rgba(0,255,220,0.95)';
-    octx.lineWidth = 2;
-    octx.beginPath();
-    octx.moveTo(px - 10, py); octx.lineTo(px + 10, py);
-    octx.moveTo(px, py - 10); octx.lineTo(px, py + 10);
-    octx.stroke();
+  function scoreCandidate(c){
+    if(!ballProfile) return -Infinity;
+
+    const targetArea = Math.PI * ballProfile.learnedRadius * ballProfile.learnedRadius;
+    const huePenalty = Math.min(1, c.hueDiff / 50);
+    const satPenalty = Math.min(1, c.satDiff / 55);
+    const valPenalty = Math.min(1, c.valDiff / 55);
+    const circBonus = clamp((c.circularity - 0.38) / 0.62, 0, 1);
+    const fillBonus = clamp((c.fillRatio - 0.35) / 0.45, 0, 1);
+    const aspectPenalty = Math.min(1, Math.abs(1 - c.aspect) / 0.7);
+    const areaPenalty = Math.min(1, Math.abs(c.area - targetArea) / Math.max(targetArea, 1));
+
+    return (1 - huePenalty) * 0.42
+         + (1 - satPenalty) * 0.12
+         + (1 - valPenalty) * 0.08
+         + circBonus * 0.22
+         + fillBonus * 0.10
+         + (1 - aspectPenalty) * 0.04
+         + (1 - areaPenalty) * 0.02;
   }
 
-  function resetDetectState(){
-    bgGray = null;
-    detCount.textContent = '—';
-    pickText.textContent = '—';
-    lightText.textContent = '—';
-    debug.textContent = '';
-  }
+  function detectCandidates(vw, vh){
+    const { cw, ch, scaleX, scaleY, imageData } = getFrameToCanvas(vw, vh);
+    const data = imageData.data;
+    const mask = new Uint8Array(cw * ch);
 
-  async function loadEngine(){
-    modelStatus.textContent = '준비완료(Motion Contour)';
+    const hueTol = Number(thr.value) * 2.2;
+    const satTol = Math.max(18, Number(thr.value) * 1.4);
+    const valTol = Math.max(18, Number(thr.value) * 1.8);
+
+    for(let i=0, p=0; i<data.length; i+=4, p++){
+      const hsv = rgbToHsv(data[i], data[i+1], data[i+2]);
+      const hDiff = hueDist(hsv.h, ballProfile.h);
+      const sDiff = Math.abs(hsv.s - ballProfile.s);
+      const vDiff = Math.abs(hsv.v - ballProfile.v);
+      if(hDiff <= hueTol && sDiff <= satTol && vDiff <= valTol){
+        mask[p] = 1;
+      }
+    }
+
+    const filtered = closeOpen(mask, cw, ch);
+    let candidates = componentCandidates(filtered, cw, ch, scaleX, scaleY);
+
+    candidates = candidates
+      .filter(c => c.area >= ballProfile.minArea && c.area <= ballProfile.maxArea)
+      .filter(c => c.aspect > 0.55 && c.aspect < 1.45)
+      .filter(c => c.fillRatio > 0.34)
+      .filter(c => c.circularity >= ballProfile.minCircularity)
+      .map(c => {
+        const sx = clamp(Math.round(c.cx / scaleX), 0, cw - 1);
+        const sy = clamp(Math.round(c.cy / scaleY), 0, ch - 1);
+        const idx = (sy*cw + sx) * 4;
+        const hsv = rgbToHsv(data[idx], data[idx+1], data[idx+2]);
+        c.hueDiff = hueDist(hsv.h, ballProfile.h);
+        c.satDiff = Math.abs(hsv.s - ballProfile.s);
+        c.valDiff = Math.abs(hsv.v - ballProfile.v);
+        c.score = scoreCandidate(c);
+        return c;
+      })
+      .sort((a,b) => b.score - a.score)
+      .slice(0, Number(topk.value));
+
+    return { candidates, hueTol, satTol, valTol };
   }
 
   async function detectOnce(){
-    if(!camOn) return;
-    if(video.readyState < 2) return;
-    if(busy) return;
+    if(!camOn || !ballProfile) return;
+    if(video.readyState < 2 || busy) return;
 
     busy = true;
     const t0 = performance.now();
-
     try{
       const vw = video.videoWidth || 0;
       const vh = video.videoHeight || 0;
       if(vw <= 0 || vh <= 0) return;
 
-      const motionInfo = prepareMotionCanvas(vw, vh);
-      const gray = captureGray();
-      const threshold = Number(thr.value);
-      const maxK = Number(topk.value);
-
-      const base = buildMotionMask(gray, threshold);
+      const { candidates, hueTol, satTol, valTol } = detectCandidates(vw, vh);
 
       resizeOverlay();
-      octx.clearRect(0, 0, overlay.width, overlay.height);
-
+      octx.clearRect(0,0, overlay.width, overlay.height);
       const rect = getDisplayRect();
       drawGrid(rect);
-
-      if(!base){
-        modelStatus.textContent = '배경 학습중…';
-        detCount.textContent = '0개';
-        pickText.textContent = '—';
-        lightText.textContent = '—';
-        debug.textContent = '배경 기준 프레임을 만드는 중입니다. 움직이는 물체를 잠시 보여 주세요.';
-        return;
-      }
-
-      modelStatus.textContent = '준비완료(Motion Contour)';
-
-      const cleaned = cleanMask(base.mask, motionInfo.w, motionInfo.h);
-      const candidates = extractCandidates(
-        cleaned,
-        base.diff,
-        motionInfo.w,
-        motionInfo.h,
-        motionInfo.scaleBackX,
-        motionInfo.scaleBackY,
-        vw,
-        vh,
-        maxK
-      );
 
       detCount.textContent = candidates.length ? `${candidates.length}개` : '0개';
 
       if(!candidates.length){
         pickText.textContent = '—';
         lightText.textContent = '—';
+        lastBest = null;
+        drawGuide(rect);
         const t1 = performance.now();
-        debug.textContent =
-          `detect ${(t1 - t0).toFixed(0)}ms · motion px ${base.motionPixels} · threshold ${threshold} · 후보 0개`;
+        debug.textContent = `detect ${(t1-t0).toFixed(0)}ms · 후보 0개 · hue±${hueTol.toFixed(0)} sat±${satTol.toFixed(0)} val±${valTol.toFixed(0)}`;
         return;
       }
 
       const best = candidates[0];
-      drawZoneHighlight(rect, best.zone);
+      lastBest = best;
+      const bestZone = zoneFromPoint(best.cx, best.cy, vw, vh);
+      drawZoneHighlight(rect, bestZone);
 
-      for(let i = 0; i < candidates.length; i++){
+      for(let i=0;i<candidates.length;i++){
         const c = candidates[i];
+        const z = zoneFromPoint(c.cx, c.cy, vw, vh);
         const isBest = i === 0;
-        const label = `motion ${c.scorePercent}% · ${c.zone}번`;
-        drawContour(rect, c.hull, c.bbox, isBest, label);
+        const label = `ball ${(c.score*100).toFixed(0)}% · ${z}번`;
+        drawCircleCandidate(rect, c, isBest, label);
       }
 
-      drawCenterCross(rect, best.center[0], best.center[1]);
+      const bbox = [best.x, best.y, best.w, best.h];
+      const light = computeBrightness(vw, vh, bbox);
 
-      pickText.textContent = `${best.zone}번 · ${best.scorePercent}%`;
-
-      const light = computeBrightness(vw, vh, best.bbox);
+      pickText.textContent = `${bestZone}번 · ${(best.score*100).toFixed(0)}%`;
       lightText.textContent = `${light.label} (Δ${light.diff.toFixed(0)})`;
 
       const t1 = performance.now();
       debug.textContent =
-        `detect ${(t1 - t0).toFixed(0)}ms · period ${period.value}ms · threshold ${threshold} · topK ${maxK}\n` +
-        `motion px ${base.motionPixels} · circularity ${best.circularity.toFixed(2)} · aspect ${best.aspect.toFixed(2)} · zone ${best.zone}\n` +
+        `detect ${(t1-t0).toFixed(0)}ms · period ${period.value}ms · hue±${hueTol.toFixed(0)} sat±${satTol.toFixed(0)} val±${valTol.toFixed(0)}\n` +
+        `best circ ${best.circularity.toFixed(2)} · fill ${best.fillRatio.toFixed(2)} · aspect ${best.aspect.toFixed(2)} · zone ${bestZone}\n` +
         `ROI ${light.roiMean.toFixed(0)} / BG ${light.bgMean.toFixed(0)} / Δ${light.diff.toFixed(0)}`;
 
     }catch(e){
@@ -790,8 +762,22 @@
     }
   }
 
+  function drawIdle(){
+    resizeOverlay();
+    octx.clearRect(0, 0, overlay.width, overlay.height);
+    const rect = getDisplayRect();
+    drawGrid(rect);
+    drawGuide(rect);
+  }
+
   function loop(ts){
     if(!camOn){
+      requestAnimationFrame(loop);
+      return;
+    }
+
+    if(!ballProfile){
+      drawIdle();
       requestAnimationFrame(loop);
       return;
     }
@@ -801,7 +787,6 @@
       lastDetectAt = ts;
       detectOnce();
     }
-
     requestAnimationFrame(loop);
   }
 
@@ -824,11 +809,10 @@
       camOn = true;
       camBtn.textContent = '캠 끄기';
       camBtn.classList.add('off');
-      modelStatus.textContent = '배경 학습중…';
 
-      bgGray = null;
       lastDetectAt = 0;
-      resizeOverlay();
+      drawIdle();
+      if(!ballProfile) modelStatus.textContent = '공 확인 필요';
     }catch(e){
       debug.textContent = '카메라 실패: ' + e + '\n(HTTPS/localhost에서 실행 중인지 확인하세요)';
     }
@@ -838,7 +822,7 @@
     if(!camOn) return;
     try{
       if(video.srcObject){
-        try{ video.srcObject.getTracks().forEach(t => t.stop()); }catch(_e){}
+        try{ video.srcObject.getTracks().forEach(t=>t.stop()); }catch(_e){}
         video.srcObject = null;
       }
       stream = null;
@@ -847,19 +831,32 @@
       camBtn.textContent = '캠 켜기';
       camBtn.classList.remove('off');
 
-      modelStatus.textContent = '준비완료(Motion Contour)';
-      resetDetectState();
+      detCount.textContent = '—';
+      pickText.textContent = '—';
+      lightText.textContent = '—';
+      debug.textContent = '';
+      lastBest = null;
 
       resizeOverlay();
-      octx.clearRect(0, 0, overlay.width, overlay.height);
+      octx.clearRect(0,0, overlay.width, overlay.height);
     }catch(_e){}
   }
 
   camBtn.addEventListener('click', () => camOn ? stopCam() : startCam());
-  window.addEventListener('resize', resizeOverlay);
+  learnBtn.addEventListener('click', learnBallProfile);
+  resetBtn.addEventListener('click', () => {
+    ballProfile = null;
+    lastBest = null;
+    modelStatus.textContent = '대기중';
+    detCount.textContent = '—';
+    pickText.textContent = '—';
+    lightText.textContent = '—';
+    debug.textContent = '공 기준이 초기화되었습니다.';
+    if(camOn) drawIdle();
+  });
+  window.addEventListener('resize', () => { if(camOn) drawIdle(); else resizeOverlay(); });
 
   resizeOverlay();
-  loadEngine();
   requestAnimationFrame(loop);
 })();
 </script>

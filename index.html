@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
-  <title>9분할 공 탐지 테스트 v3 (COCO-SSD)</title>
+  <title>9분할 움직임 탐지 테스트 v4 (Motion Outline)</title>
 
   <style>
     :root{
@@ -12,13 +12,21 @@
       --muted:#9ca3af;
       --blue:#2563eb;
       --red:#ef4444;
+      --green:#10b981;
+      --yellow:#f59e0b;
     }
     *{ box-sizing:border-box; }
-    html,body{ height:100%; margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--fg); }
+    html,body{
+      height:100%;
+      margin:0;
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+      background:var(--bg);
+      color:var(--fg);
+    }
 
     header{
-      padding: 12px 14px;
-      border-bottom: 1px solid rgba(255,255,255,.08);
+      padding:12px 14px;
+      border-bottom:1px solid rgba(255,255,255,.08);
       display:flex;
       align-items:center;
       gap:12px;
@@ -46,14 +54,14 @@
       padding:8px 10px;
       border-radius:999px;
       border:1px solid rgba(255,255,255,.14);
-      background: rgba(0,0,0,.25);
-      font: 800 13px/1 system-ui;
+      background:rgba(0,0,0,.25);
+      font:800 13px/1 system-ui;
       white-space:nowrap;
     }
     .pill .muted{ color:var(--muted); font-weight:700; }
 
     main{
-      height: calc(100vh - 64px);
+      height:calc(100vh - 64px);
       display:flex;
       flex-direction:column;
       padding:12px;
@@ -67,10 +75,10 @@
       flex-wrap:wrap;
     }
     label{ font-size:12px; color:var(--muted); font-weight:800; }
-    input[type="range"]{ width: 180px; }
+    input[type="range"]{ width:180px; }
     code{
       color:#d1fae5;
-      background: rgba(16,185,129,.12);
+      background:rgba(16,185,129,.12);
       border:1px solid rgba(16,185,129,.25);
       padding:2px 6px;
       border-radius:8px;
@@ -79,7 +87,7 @@
 
     .stage{
       flex:1 1 auto;
-      min-height: 260px;
+      min-height:260px;
       position:relative;
       background:#000;
       border-radius:14px;
@@ -89,7 +97,7 @@
     video{
       width:100%;
       height:100%;
-      object-fit: contain;
+      object-fit:contain;
       background:#000;
     }
     canvas#overlay{
@@ -114,23 +122,16 @@
       white-space:pre-wrap;
     }
   </style>
-
-  <!-- TensorFlow.js (Core) -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
-  <!-- WASM backend (WebGL 안되면 fallback 용) -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.22.0/dist/tf-backend-wasm.min.js"></script>
-  <!-- COCO-SSD -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
 </head>
 
 <body>
   <header>
-    <div class="title">🎥 9분할 공(sports ball) 탐지 테스트 v3 (COCO‑SSD)</div>
+    <div class="title">🎥 9분할 움직임 탐지 테스트 v4 (움직이는 물체 외곽 라인 표시)</div>
     <div class="spacer"></div>
 
     <button id="camBtn" class="btn">캠 켜기</button>
 
-    <span class="pill"><span class="muted">모델</span> <span id="modelStatus">로딩중…</span></span>
+    <span class="pill"><span class="muted">모델</span> <span id="modelStatus">준비중…</span></span>
     <span class="pill"><span class="muted">탐지</span> <span id="detCount">—</span></span>
     <span class="pill"><span class="muted">선택</span> <span id="pickText">—</span></span>
     <span class="pill"><span class="muted">밝기</span> <span id="lightText">—</span></span>
@@ -139,16 +140,16 @@
   <main>
     <div class="row">
       <label>탐지 주기(ms)</label>
-      <input id="period" type="range" min="200" max="1200" step="50" value="500">
-      <code id="periodVal">500</code>
+      <input id="period" type="range" min="80" max="800" step="20" value="180">
+      <code id="periodVal">180</code>
 
-      <label>최소 신뢰도</label>
-      <input id="thr" type="range" min="0.15" max="0.80" step="0.05" value="0.35">
-      <code id="thrVal">0.35</code>
+      <label>최소 변화 민감도</label>
+      <input id="thr" type="range" min="10" max="80" step="2" value="28">
+      <code id="thrVal">28</code>
 
       <label>최대 후보</label>
-      <input id="topk" type="range" min="5" max="30" step="1" value="20">
-      <code id="topkVal">20</code>
+      <input id="topk" type="range" min="1" max="10" step="1" value="5">
+      <code id="topkVal">5</code>
     </div>
 
     <div class="stage" id="stage">
@@ -158,10 +159,11 @@
 
     <div class="footer">
       <div class="small">
-- 라이브러리: <code>TensorFlow.js + COCO‑SSD</code> / 클래스: <code>sports ball</code>
-- 표시: 공 후보 여러 개면 모두 박스 표시, 가장 높은 점수 1개를 선택(하이라이트)
-- 9분할: <code>1~9</code> 번호 + 선택된 공의 칸 하이라이트
-- 밝기/그림자: 공 ROI 평균 밝기 vs 주변(확장 박스) 평균 대비로 <code>밝음/보통/어두움</code>
+- 인식 방식: <code>프레임 차분(움직임 감지)</code>
+- 표시: 움직이는 물체 후보를 박스로 표시, 가장 큰 후보 1개를 선택
+- 외곽선: 선택된 물체 주변 변화 영역에 라인/점 표시
+- 9분할: <code>1~9</code> 번호 + 선택된 물체의 칸 하이라이트
+- 밝기: 선택된 물체 ROI 평균 밝기 vs 주변(확장 박스) 평균 비교로 <code>밝음/보통/어두움</code>
       </div>
       <div class="small" id="debug"></div>
     </div>
@@ -190,19 +192,26 @@
   const topkVal = document.getElementById('topkVal');
 
   period.addEventListener('input', ()=> periodVal.textContent = period.value);
-  thr.addEventListener('input', ()=> thrVal.textContent = Number(thr.value).toFixed(2));
+  thr.addEventListener('input', ()=> thrVal.textContent = thr.value);
   topk.addEventListener('input', ()=> topkVal.textContent = topk.value);
 
   let stream = null;
   let camOn = false;
-
-  let model = null;
   let busy = false;
   let lastDetectAt = 0;
+  let motionReady = false;
 
-  // 밝기 측정용(작게)
+  // 움직임 감지용 저해상도 캔버스
+  const motionCanvas = document.createElement('canvas');
+  const motionCtx = motionCanvas.getContext('2d', { willReadFrequently:true });
+
+  // 밝기 측정용
   const snap = document.createElement('canvas');
   const sctx = snap.getContext('2d', { willReadFrequently:true });
+
+  let prevGray = null;
+  let prevW = 0;
+  let prevH = 0;
 
   function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
 
@@ -217,14 +226,14 @@
     octx.setTransform(dpr,0,0,dpr,0,0);
   }
 
-  // object-fit: contain 영역
   function getDisplayRect(){
     const vw = video.videoWidth || 0;
     const vh = video.videoHeight || 0;
     const ww = stage.clientWidth || 1;
     const wh = stage.clientHeight || 1;
-    if(vw <= 0 || vh <= 0) return {left:0, top:0, width:ww, height:wh, scaleX:1, scaleY:1};
-
+    if(vw <= 0 || vh <= 0){
+      return {left:0, top:0, width:ww, height:wh, scaleX:1, scaleY:1};
+    }
     const s = Math.min(ww / vw, wh / vh);
     const dw = vw * s;
     const dh = vh * s;
@@ -246,7 +255,6 @@
   function drawGrid(rect){
     const x0 = rect.left, y0 = rect.top, w = rect.width, h = rect.height;
 
-    // lines
     octx.strokeStyle = 'rgba(255,255,255,0.9)';
     octx.lineWidth = 1;
     octx.beginPath();
@@ -256,7 +264,6 @@
     octx.moveTo(x0, y0 + 2*h/3);    octx.lineTo(x0 + w, y0 + 2*h/3);
     octx.stroke();
 
-    // numbers
     octx.font = '900 16px system-ui';
     octx.textAlign = 'center';
     octx.textBaseline = 'middle';
@@ -342,7 +349,6 @@
   }
 
   function computeBrightness(vw, vh, bbox){
-    // 작은 캔버스에 프레임 복사
     const targetW = 320;
     const sc = targetW / Math.max(1, vw);
     const targetH = Math.max(1, Math.round(vh * sc));
@@ -362,7 +368,6 @@
     const roi = sctx.getImageData(sx, sy, sw, sh);
     const roiMean = meanLuma(roi);
 
-    // 주변 배경(확장 영역)
     const ex = clamp(Math.round(sx - sw*0.18), 0, targetW-1);
     const ey = clamp(Math.round(sy - sh*0.18), 0, targetH-1);
     const ew = clamp(Math.round(sw*1.36), 1, targetW - ex);
@@ -375,66 +380,258 @@
     return {roiMean, bgMean, diff:r.diff, label:r.label};
   }
 
-  async function loadModel(){
-    try{
-      modelStatus.textContent = 'TF 준비중…';
+  function prepareMotionCanvas(vw, vh){
+    const targetW = 192;
+    const scale = targetW / Math.max(1, vw);
+    const targetH = Math.max(1, Math.round(vh * scale));
 
-      // 1) WebGL 우선 시도
-      let backend = null;
-      try{
-        await tf.setBackend('webgl');
-        await tf.ready();
-        backend = tf.getBackend();
-      }catch(_e){}
-
-      // 2) WebGL이 안되면 WASM fallback
-      if(backend !== 'webgl'){
-        try{
-          // wasm 파일 경로 지정(필수)
-          if(tf && tf.wasm && tf.wasm.setWasmPaths){
-            tf.wasm.setWasmPaths('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.22.0/dist/');
-          }
-          await tf.setBackend('wasm');
-          await tf.ready();
-          backend = tf.getBackend();
-        }catch(_e){}
-      }
-
-      modelStatus.textContent = '모델 로딩중…';
-      // lite_mobilenet_v2: 모바일에서 빠른 편
-      model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
-
-      modelStatus.textContent = `준비완료(${backend || 'unknown'})`;
-    }catch(e){
-      console.error(e);
-      modelStatus.textContent = '로딩 실패';
-      debug.textContent = '모델 로딩 오류: ' + e;
+    if(motionCanvas.width !== targetW || motionCanvas.height !== targetH){
+      motionCanvas.width = targetW;
+      motionCanvas.height = targetH;
+      prevGray = null;
+      prevW = targetW;
+      prevH = targetH;
     }
+    return {mw:targetW, mh:targetH, scaleX:vw / targetW, scaleY:vh / targetH};
+  }
+
+  function makeGrayFrame(imageData){
+    const d = imageData.data;
+    const gray = new Uint8Array(d.length / 4);
+    for(let i=0, j=0; i<d.length; i+=4, j++){
+      gray[j] = ((d[i]*30 + d[i+1]*59 + d[i+2]*11) / 100) | 0;
+    }
+    return gray;
+  }
+
+  function dilateMask(src, w, h){
+    const out = new Uint8Array(src.length);
+    for(let y=1; y<h-1; y++){
+      for(let x=1; x<w-1; x++){
+        let on = 0;
+        for(let dy=-1; dy<=1 && !on; dy++){
+          for(let dx=-1; dx<=1; dx++){
+            if(src[(y+dy)*w + (x+dx)]){
+              on = 1;
+              break;
+            }
+          }
+        }
+        out[y*w + x] = on;
+      }
+    }
+    return out;
+  }
+
+  function erodeMask(src, w, h){
+    const out = new Uint8Array(src.length);
+    for(let y=1; y<h-1; y++){
+      for(let x=1; x<w-1; x++){
+        let on = 1;
+        for(let dy=-1; dy<=1 && on; dy++){
+          for(let dx=-1; dx<=1; dx++){
+            if(!src[(y+dy)*w + (x+dx)]){
+              on = 0;
+              break;
+            }
+          }
+        }
+        out[y*w + x] = on;
+      }
+    }
+    return out;
+  }
+
+  function findConnectedComponents(mask, w, h, maxObjects){
+    const visited = new Uint8Array(mask.length);
+    const comps = [];
+    const qx = new Int32Array(mask.length);
+    const qy = new Int32Array(mask.length);
+
+    for(let y=0; y<h; y++){
+      for(let x=0; x<w; x++){
+        const idx = y*w + x;
+        if(!mask[idx] || visited[idx]) continue;
+
+        let head = 0, tail = 0;
+        qx[tail] = x;
+        qy[tail] = y;
+        tail++;
+        visited[idx] = 1;
+
+        let minX = x, minY = y, maxX = x, maxY = y;
+        let area = 0;
+        const points = [];
+
+        while(head < tail){
+          const cx = qx[head];
+          const cy = qy[head];
+          head++;
+
+          area++;
+          points.push([cx, cy]);
+
+          if(cx < minX) minX = cx;
+          if(cy < minY) minY = cy;
+          if(cx > maxX) maxX = cx;
+          if(cy > maxY) maxY = cy;
+
+          for(let dy=-1; dy<=1; dy++){
+            for(let dx=-1; dx<=1; dx++){
+              if(dx === 0 && dy === 0) continue;
+              const nx = cx + dx;
+              const ny = cy + dy;
+              if(nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+              const nidx = ny*w + nx;
+              if(mask[nidx] && !visited[nidx]){
+                visited[nidx] = 1;
+                qx[tail] = nx;
+                qy[tail] = ny;
+                tail++;
+              }
+            }
+          }
+        }
+
+        const bw = maxX - minX + 1;
+        const bh = maxY - minY + 1;
+        if(area >= 28 && bw >= 8 && bh >= 8){
+          comps.push({ minX, minY, maxX, maxY, bw, bh, area, points });
+        }
+      }
+    }
+
+    comps.sort((a,b)=> b.area - a.area);
+    return comps.slice(0, maxObjects);
+  }
+
+  function perimeterPointsFromMask(mask, w, h, comp){
+    const out = [];
+    const {minX, minY, maxX, maxY} = comp;
+    for(let y=minY; y<=maxY; y++){
+      for(let x=minX; x<=maxX; x++){
+        const idx = y*w + x;
+        if(!mask[idx]) continue;
+
+        let edge = false;
+        for(let dy=-1; dy<=1 && !edge; dy++){
+          for(let dx=-1; dx<=1; dx++){
+            if(dx===0 && dy===0) continue;
+            const nx = x + dx;
+            const ny = y + dy;
+            if(nx < 0 || ny < 0 || nx >= w || ny >= h){
+              edge = true;
+              break;
+            }
+            if(!mask[ny*w + nx]){
+              edge = true;
+              break;
+            }
+          }
+        }
+        if(edge) out.push([x, y]);
+      }
+    }
+    return out;
+  }
+
+  function motionDetect(vw, vh){
+    const prep = prepareMotionCanvas(vw, vh);
+    const {mw, mh, scaleX, scaleY} = prep;
+
+    motionCtx.drawImage(video, 0, 0, mw, mh);
+    const img = motionCtx.getImageData(0, 0, mw, mh);
+    const gray = makeGrayFrame(img);
+
+    if(!prevGray || prevW !== mw || prevH !== mh){
+      prevGray = gray;
+      prevW = mw;
+      prevH = mh;
+      return { candidates:[], mask:null, mw, mh, scaleX, scaleY };
+    }
+
+    const threshold = Number(thr.value);
+    let rawMask = new Uint8Array(gray.length);
+
+    for(let i=0; i<gray.length; i++){
+      const diff = Math.abs(gray[i] - prevGray[i]);
+      rawMask[i] = diff >= threshold ? 1 : 0;
+    }
+
+    // 노이즈 완화
+    rawMask = dilateMask(rawMask, mw, mh);
+    rawMask = erodeMask(rawMask, mw, mh);
+    rawMask = dilateMask(rawMask, mw, mh);
+
+    const comps = findConnectedComponents(rawMask, mw, mh, Number(topk.value));
+    const candidates = comps.map(c => ({
+      score: c.area,
+      bbox: [
+        Math.round(c.minX * scaleX),
+        Math.round(c.minY * scaleY),
+        Math.round(c.bw * scaleX),
+        Math.round(c.bh * scaleY)
+      ],
+      comp: c
+    }));
+
+    prevGray = gray;
+    return { candidates, mask:rawMask, mw, mh, scaleX, scaleY };
+  }
+
+  function drawMotionOutline(rect, perimeterPts, scaleX, scaleY){
+    if(!perimeterPts || !perimeterPts.length) return;
+
+    octx.save();
+    octx.strokeStyle = 'rgba(255, 235, 59, 0.95)';
+    octx.fillStyle = 'rgba(255, 235, 59, 0.85)';
+    octx.lineWidth = 1.5;
+
+    // 점을 너무 많이 그리면 무거워질 수 있어서 간격 샘플링
+    const step = Math.max(1, Math.floor(perimeterPts.length / 260));
+
+    octx.beginPath();
+    let first = true;
+    for(let i=0; i<perimeterPts.length; i += step){
+      const [mx, my] = perimeterPts[i];
+      const px = rect.left + (mx * scaleX) * rect.scaleX;
+      const py = rect.top  + (my * scaleY) * rect.scaleY;
+
+      if(first){
+        octx.moveTo(px, py);
+        first = false;
+      }else{
+        octx.lineTo(px, py);
+      }
+    }
+    octx.stroke();
+
+    for(let i=0; i<perimeterPts.length; i += step){
+      const [mx, my] = perimeterPts[i];
+      const px = rect.left + (mx * scaleX) * rect.scaleX;
+      const py = rect.top  + (my * scaleY) * rect.scaleY;
+      octx.beginPath();
+      octx.arc(px, py, 1.6, 0, Math.PI*2);
+      octx.fill();
+    }
+
+    octx.restore();
   }
 
   async function detectOnce(){
-    if(!camOn || !model) return;
+    if(!camOn) return;
     if(video.readyState < 2) return;
     if(busy) return;
 
     busy = true;
     const t0 = performance.now();
+
     try{
       const vw = video.videoWidth || 0;
       const vh = video.videoHeight || 0;
-      if(vw<=0 || vh<=0) return;
+      if(vw <= 0 || vh <= 0) return;
 
-      const minScore = Number(thr.value);
-      const maxK = Number(topk.value);
-
-      // detect(video) 결과 bbox는 video 픽셀 좌표 기준
-      const preds = await model.detect(video, maxK);
-
-      // sports ball만
-      const balls = preds
-        .filter(p => p && p.class === 'sports ball' && (p.score || 0) >= minScore)
-        .map(p => ({ score: p.score || 0, bbox: p.bbox }))
-        .sort((a,b)=>b.score-a.score);
+      const result = motionDetect(vw, vh);
 
       resizeOverlay();
       octx.clearRect(0,0, overlay.width, overlay.height);
@@ -442,40 +639,38 @@
       const rect = getDisplayRect();
       drawGrid(rect);
 
-      detCount.textContent = balls.length ? `${balls.length}개` : '0개';
+      const objects = result.candidates.sort((a,b)=> b.score - a.score);
+      detCount.textContent = objects.length ? `${objects.length}개` : '0개';
 
-      if(!balls.length){
+      if(!objects.length){
         pickText.textContent = '—';
         lightText.textContent = '—';
         const t1 = performance.now();
-        debug.textContent = `detect ${(t1-t0).toFixed(0)}ms · 후보 0개 (thr ${minScore.toFixed(2)})`;
+        debug.textContent = `detect ${(t1-t0).toFixed(0)}ms · 후보 0개 · 민감도 ${thr.value}`;
         return;
       }
 
-      // 여러 개 표시 + 1개 선택
-      let best = balls[0];
-      const [bx,by,bw,bh] = best.bbox;
+      const best = objects[0];
+      const [bx, by, bw, bh] = best.bbox;
       const bcx = bx + bw/2;
       const bcy = by + bh/2;
       const bestZone = zoneFromPoint(bcx, bcy, vw, vh);
 
-      // 선택 존 하이라이트
       drawZoneHighlight(rect, bestZone);
 
-      for(let i=0;i<balls.length;i++){
-        const b = balls[i];
+      for(let i=0;i<objects.length;i++){
+        const b = objects[i];
         const [x,y,w,h] = b.bbox;
         const cx = x + w/2;
         const cy = y + h/2;
         const z = zoneFromPoint(cx, cy, vw, vh);
-        const isBest = (i===0);
-        const label = `ball ${(b.score*100).toFixed(0)}% · ${z}번`;
+        const isBest = (i === 0);
+        const label = `motion ${Math.round(b.score)} · ${z}번`;
         drawBox(rect, b.bbox, isBest, label);
 
-        // 선택 공 중심표시
         if(isBest){
-          const px = rect.left + cx*rect.scaleX;
-          const py = rect.top  + cy*rect.scaleY;
+          const px = rect.left + cx * rect.scaleX;
+          const py = rect.top  + cy * rect.scaleY;
           octx.strokeStyle = 'rgba(0,255,220,0.95)';
           octx.lineWidth = 2;
           octx.beginPath();
@@ -485,16 +680,20 @@
         }
       }
 
-      pickText.textContent = `${bestZone}번 · ${(best.score*100).toFixed(0)}%`;
+      if(result.mask && best.comp){
+        const perimeter = perimeterPointsFromMask(result.mask, result.mw, result.mh, best.comp);
+        drawMotionOutline(rect, perimeter, result.scaleX, result.scaleY);
+      }
+
+      pickText.textContent = `${bestZone}번 · 움직임 ${Math.round(best.score)}`;
 
       const light = computeBrightness(vw, vh, best.bbox);
       lightText.textContent = `${light.label} (Δ${light.diff.toFixed(0)})`;
 
       const t1 = performance.now();
       debug.textContent =
-        `detect ${(t1-t0).toFixed(0)}ms · period ${period.value}ms · thr ${minScore.toFixed(2)} · topK ${maxK}\n` +
+        `detect ${(t1-t0).toFixed(0)}ms · period ${period.value}ms · sensitivity ${thr.value} · topK ${topk.value}\n` +
         `ROI ${light.roiMean.toFixed(0)} / BG ${light.bgMean.toFixed(0)} / Δ${light.diff.toFixed(0)} · zone ${bestZone}`;
-
     }catch(e){
       console.error(e);
       debug.textContent = '오류: ' + e;
@@ -536,6 +735,8 @@
       camBtn.textContent = '캠 끄기';
       camBtn.classList.add('off');
 
+      prevGray = null;
+      motionReady = true;
       lastDetectAt = 0;
       resizeOverlay();
     }catch(e){
@@ -550,8 +751,11 @@
         try{ video.srcObject.getTracks().forEach(t=>t.stop()); }catch(_e){}
         video.srcObject = null;
       }
+
       stream = null;
       camOn = false;
+      prevGray = null;
+      motionReady = false;
 
       camBtn.textContent = '캠 켜기';
       camBtn.classList.remove('off');
@@ -566,15 +770,17 @@
     }catch(_e){}
   }
 
+  function init(){
+    resizeOverlay();
+    modelStatus.textContent = '준비완료(움직임 감지)';
+    requestAnimationFrame(loop);
+  }
+
   camBtn.addEventListener('click', () => camOn ? stopCam() : startCam());
   window.addEventListener('resize', resizeOverlay);
 
-  // 시작: 모델 로드 + 루프 시작
-  resizeOverlay();
-  loadModel();
-  requestAnimationFrame(loop);
+  init();
 })();
 </script>
-
 </body>
 </html>

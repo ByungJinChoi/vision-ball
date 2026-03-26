@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
-  <title>9분할 움직임 탐지 테스트 v4 (Motion Outline)</title>
+  <title>9분할 공 탐지 테스트 v4 (Motion Contour)</title>
 
   <style>
     :root{
@@ -12,21 +12,13 @@
       --muted:#9ca3af;
       --blue:#2563eb;
       --red:#ef4444;
-      --green:#10b981;
-      --yellow:#f59e0b;
     }
     *{ box-sizing:border-box; }
-    html,body{
-      height:100%;
-      margin:0;
-      font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
-      background:var(--bg);
-      color:var(--fg);
-    }
+    html,body{ height:100%; margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--fg); }
 
     header{
-      padding:12px 14px;
-      border-bottom:1px solid rgba(255,255,255,.08);
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(255,255,255,.08);
       display:flex;
       align-items:center;
       gap:12px;
@@ -54,14 +46,14 @@
       padding:8px 10px;
       border-radius:999px;
       border:1px solid rgba(255,255,255,.14);
-      background:rgba(0,0,0,.25);
-      font:800 13px/1 system-ui;
+      background: rgba(0,0,0,.25);
+      font: 800 13px/1 system-ui;
       white-space:nowrap;
     }
     .pill .muted{ color:var(--muted); font-weight:700; }
 
     main{
-      height:calc(100vh - 64px);
+      height: calc(100vh - 64px);
       display:flex;
       flex-direction:column;
       padding:12px;
@@ -75,10 +67,10 @@
       flex-wrap:wrap;
     }
     label{ font-size:12px; color:var(--muted); font-weight:800; }
-    input[type="range"]{ width:180px; }
+    input[type="range"]{ width: 180px; }
     code{
       color:#d1fae5;
-      background:rgba(16,185,129,.12);
+      background: rgba(16,185,129,.12);
       border:1px solid rgba(16,185,129,.25);
       padding:2px 6px;
       border-radius:8px;
@@ -87,7 +79,7 @@
 
     .stage{
       flex:1 1 auto;
-      min-height:260px;
+      min-height: 260px;
       position:relative;
       background:#000;
       border-radius:14px;
@@ -97,7 +89,7 @@
     video{
       width:100%;
       height:100%;
-      object-fit:contain;
+      object-fit: contain;
       background:#000;
     }
     canvas#overlay{
@@ -126,12 +118,12 @@
 
 <body>
   <header>
-    <div class="title">🎥 9분할 움직임 탐지 테스트 v4 (움직이는 물체 외곽 라인 표시)</div>
+    <div class="title">🎥 9분할 공 탐지 테스트 v4 (움직임 외곽선 방식)</div>
     <div class="spacer"></div>
 
     <button id="camBtn" class="btn">캠 켜기</button>
 
-    <span class="pill"><span class="muted">모델</span> <span id="modelStatus">준비중…</span></span>
+    <span class="pill"><span class="muted">엔진</span> <span id="modelStatus">준비중…</span></span>
     <span class="pill"><span class="muted">탐지</span> <span id="detCount">—</span></span>
     <span class="pill"><span class="muted">선택</span> <span id="pickText">—</span></span>
     <span class="pill"><span class="muted">밝기</span> <span id="lightText">—</span></span>
@@ -140,16 +132,16 @@
   <main>
     <div class="row">
       <label>탐지 주기(ms)</label>
-      <input id="period" type="range" min="80" max="800" step="20" value="180">
-      <code id="periodVal">180</code>
+      <input id="period" type="range" min="120" max="1200" step="40" value="320">
+      <code id="periodVal">320</code>
 
-      <label>최소 변화 민감도</label>
-      <input id="thr" type="range" min="10" max="80" step="2" value="28">
+      <label>움직임 임계값</label>
+      <input id="thr" type="range" min="10" max="80" step="1" value="28">
       <code id="thrVal">28</code>
 
       <label>최대 후보</label>
-      <input id="topk" type="range" min="1" max="10" step="1" value="5">
-      <code id="topkVal">5</code>
+      <input id="topk" type="range" min="5" max="30" step="1" value="20">
+      <code id="topkVal">20</code>
     </div>
 
     <div class="stage" id="stage">
@@ -159,11 +151,11 @@
 
     <div class="footer">
       <div class="small">
-- 인식 방식: <code>프레임 차분(움직임 감지)</code>
-- 표시: 움직이는 물체 후보를 박스로 표시, 가장 큰 후보 1개를 선택
-- 외곽선: 선택된 물체 주변 변화 영역에 라인/점 표시
-- 9분할: <code>1~9</code> 번호 + 선택된 물체의 칸 하이라이트
-- 밝기: 선택된 물체 ROI 평균 밝기 vs 주변(확장 박스) 평균 비교로 <code>밝음/보통/어두움</code>
+- 감지 방식: <code>배경 차분 + 움직이는 물체 외곽선(contour)</code>
+- 표시: 움직이는 후보 여러 개면 모두 외곽선 표시, 가장 원형에 가까운 1개를 선택(하이라이트)
+- 9분할: <code>1~9</code> 번호 + 선택된 공의 칸 하이라이트
+- 밝기/그림자: 선택된 ROI 평균 밝기 vs 주변(확장 박스) 평균 대비로 <code>밝음/보통/어두움</code>
+- 참고: 이 방식은 <code>움직이는 공</code>에 최적화되어 있어 정지하면 외곽선이 약해질 수 있습니다.
       </div>
       <div class="small" id="debug"></div>
     </div>
@@ -191,29 +183,28 @@
   const topk = document.getElementById('topk');
   const topkVal = document.getElementById('topkVal');
 
-  period.addEventListener('input', ()=> periodVal.textContent = period.value);
-  thr.addEventListener('input', ()=> thrVal.textContent = thr.value);
-  topk.addEventListener('input', ()=> topkVal.textContent = topk.value);
+  period.addEventListener('input', () => periodVal.textContent = period.value);
+  thr.addEventListener('input', () => thrVal.textContent = thr.value);
+  topk.addEventListener('input', () => topkVal.textContent = topk.value);
 
   let stream = null;
   let camOn = false;
   let busy = false;
   let lastDetectAt = 0;
-  let motionReady = false;
 
-  // 움직임 감지용 저해상도 캔버스
-  const motionCanvas = document.createElement('canvas');
-  const motionCtx = motionCanvas.getContext('2d', { willReadFrequently:true });
+  let bgGray = null;
+  let motionW = 0;
+  let motionH = 0;
 
-  // 밝기 측정용
+  // 밝기 측정용(작게)
   const snap = document.createElement('canvas');
   const sctx = snap.getContext('2d', { willReadFrequently:true });
 
-  let prevGray = null;
-  let prevW = 0;
-  let prevH = 0;
+  // 움직임 분석용(작게)
+  const motionCanvas = document.createElement('canvas');
+  const mctx = motionCanvas.getContext('2d', { willReadFrequently:true });
 
-  function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
 
   function resizeOverlay(){
     const dpr = Math.max(1, window.devicePixelRatio || 1);
@@ -223,23 +214,23 @@
     overlay.height = Math.round(h * dpr);
     overlay.style.width = w + 'px';
     overlay.style.height = h + 'px';
-    octx.setTransform(dpr,0,0,dpr,0,0);
+    octx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
+  // object-fit: contain 영역
   function getDisplayRect(){
     const vw = video.videoWidth || 0;
     const vh = video.videoHeight || 0;
     const ww = stage.clientWidth || 1;
     const wh = stage.clientHeight || 1;
-    if(vw <= 0 || vh <= 0){
-      return {left:0, top:0, width:ww, height:wh, scaleX:1, scaleY:1};
-    }
+    if(vw <= 0 || vh <= 0) return { left:0, top:0, width:ww, height:wh, scaleX:1, scaleY:1 };
+
     const s = Math.min(ww / vw, wh / vh);
     const dw = vw * s;
     const dh = vh * s;
     const left = (ww - dw) / 2;
     const top  = (wh - dh) / 2;
-    return {left, top, width:dw, height:dh, scaleX:s, scaleY:s};
+    return { left, top, width:dw, height:dh, scaleX:s, scaleY:s };
   }
 
   function zoneFromPoint(cx, cy, vw, vh){
@@ -268,17 +259,17 @@
     octx.textAlign = 'center';
     octx.textBaseline = 'middle';
 
-    for(let r=0;r<3;r++){
-      for(let c=0;c<3;c++){
-        const n = r*3 + c + 1;
-        const cx = x0 + (c+0.5)*(w/3);
-        const cy = y0 + (r+0.5)*(h/3);
+    for(let r = 0; r < 3; r++){
+      for(let c = 0; c < 3; c++){
+        const n = r * 3 + c + 1;
+        const cx = x0 + (c + 0.5) * (w / 3);
+        const cy = y0 + (r + 0.5) * (h / 3);
 
         octx.fillStyle = 'rgba(0,0,0,0.28)';
         octx.strokeStyle = 'rgba(255,255,255,0.22)';
         octx.lineWidth = 1;
         octx.beginPath();
-        octx.arc(cx, cy, 14, 0, Math.PI*2);
+        octx.arc(cx, cy, 14, 0, Math.PI * 2);
         octx.fill();
         octx.stroke();
 
@@ -294,10 +285,10 @@
     const row = Math.floor(z / 3);
     const col = z % 3;
 
-    const x0 = rect.left + col*(rect.width/3);
-    const y0 = rect.top  + row*(rect.height/3);
-    const w = rect.width/3;
-    const h = rect.height/3;
+    const x0 = rect.left + col * (rect.width / 3);
+    const y0 = rect.top  + row * (rect.height / 3);
+    const w = rect.width / 3;
+    const h = rect.height / 3;
 
     octx.fillStyle = 'rgba(255,255,255,0.08)';
     octx.strokeStyle = 'rgba(255,255,255,0.35)';
@@ -306,27 +297,41 @@
     octx.strokeRect(x0, y0, w, h);
   }
 
-  function drawBox(rect, bbox, isBest, label){
-    const [x,y,w,h] = bbox;
-    const rx = rect.left + x * rect.scaleX;
-    const ry = rect.top  + y * rect.scaleY;
-    const rw = w * rect.scaleX;
-    const rh = h * rect.scaleY;
+  function drawContour(rect, points, bbox, isBest, label){
+    if(!points || points.length < 2) return;
 
-    octx.strokeStyle = isBest ? 'rgba(0,255,220,0.95)' : 'rgba(255,255,255,0.65)';
+    octx.beginPath();
+    for(let i = 0; i < points.length; i++){
+      const p = points[i];
+      const px = rect.left + p[0] * rect.scaleX;
+      const py = rect.top  + p[1] * rect.scaleY;
+      if(i === 0) octx.moveTo(px, py);
+      else octx.lineTo(px, py);
+    }
+    octx.closePath();
+
+    octx.strokeStyle = isBest ? 'rgba(0,255,220,0.95)' : 'rgba(255,255,255,0.70)';
     octx.lineWidth = isBest ? 3 : 2;
-    octx.strokeRect(rx, ry, rw, rh);
+
+    if(isBest){
+      octx.fillStyle = 'rgba(0,255,220,0.10)';
+      octx.fill();
+    }
+    octx.stroke();
 
     if(label){
+      const [x, y] = bbox;
+      const rx = rect.left + x * rect.scaleX;
+      const ry = rect.top  + y * rect.scaleY;
+      const pad = 4;
       octx.font = '800 12px system-ui';
       octx.textAlign = 'left';
       octx.textBaseline = 'top';
-      const pad = 4;
       const tw = octx.measureText(label).width;
-      octx.fillStyle = isBest ? 'rgba(0,0,0,0.55)' : 'rgba(0,0,0,0.35)';
-      octx.fillRect(rx, ry, tw + pad*2, 16 + pad);
+      octx.fillStyle = isBest ? 'rgba(0,0,0,0.60)' : 'rgba(0,0,0,0.40)';
+      octx.fillRect(rx, Math.max(0, ry - 20), tw + pad * 2, 18);
       octx.fillStyle = 'rgba(255,255,255,0.95)';
-      octx.fillText(label, rx + pad, ry + 2);
+      octx.fillText(label, rx + pad, Math.max(0, ry - 18));
     }
   }
 
@@ -334,18 +339,20 @@
     const d = imgData.data;
     let sum = 0;
     const n = d.length / 4;
-    for(let i=0;i<d.length;i+=4){
-      const r=d[i], g=d[i+1], b=d[i+2];
-      sum += (0.299*r + 0.587*g + 0.114*b);
+    for(let i = 0; i < d.length; i += 4){
+      const r = d[i];
+      const g = d[i + 1];
+      const b = d[i + 2];
+      sum += (0.299 * r + 0.587 * g + 0.114 * b);
     }
     return n ? (sum / n) : 0;
   }
 
   function brightnessLabel(roiMean, bgMean){
     const diff = roiMean - bgMean;
-    if(diff > 18) return {label:'밝음', diff};
-    if(diff < -18) return {label:'어두움', diff};
-    return {label:'보통', diff};
+    if(diff > 18) return { label:'밝음', diff };
+    if(diff < -18) return { label:'어두움', diff };
+    return { label:'보통', diff };
   }
 
   function computeBrightness(vw, vh, bbox){
@@ -358,264 +365,337 @@
     }
     sctx.drawImage(video, 0, 0, targetW, targetH);
 
-    const [x,y,w,h] = bbox;
+    const [x, y, w, h] = bbox;
 
-    const sx = clamp(Math.round(x * sc), 0, targetW-1);
-    const sy = clamp(Math.round(y * sc), 0, targetH-1);
+    const sx = clamp(Math.round(x * sc), 0, targetW - 1);
+    const sy = clamp(Math.round(y * sc), 0, targetH - 1);
     const sw = clamp(Math.round(w * sc), 1, targetW - sx);
     const sh = clamp(Math.round(h * sc), 1, targetH - sy);
 
     const roi = sctx.getImageData(sx, sy, sw, sh);
     const roiMean = meanLuma(roi);
 
-    const ex = clamp(Math.round(sx - sw*0.18), 0, targetW-1);
-    const ey = clamp(Math.round(sy - sh*0.18), 0, targetH-1);
-    const ew = clamp(Math.round(sw*1.36), 1, targetW - ex);
-    const eh = clamp(Math.round(sh*1.36), 1, targetH - ey);
+    const ex = clamp(Math.round(sx - sw * 0.18), 0, targetW - 1);
+    const ey = clamp(Math.round(sy - sh * 0.18), 0, targetH - 1);
+    const ew = clamp(Math.round(sw * 1.36), 1, targetW - ex);
+    const eh = clamp(Math.round(sh * 1.36), 1, targetH - ey);
 
     const bg = sctx.getImageData(ex, ey, ew, eh);
     const bgMean = meanLuma(bg);
 
     const r = brightnessLabel(roiMean, bgMean);
-    return {roiMean, bgMean, diff:r.diff, label:r.label};
+    return { roiMean, bgMean, diff:r.diff, label:r.label };
   }
 
   function prepareMotionCanvas(vw, vh){
-    const targetW = 192;
-    const scale = targetW / Math.max(1, vw);
-    const targetH = Math.max(1, Math.round(vh * scale));
+    const targetW = 320;
+    const targetH = Math.max(1, Math.round(vh * (targetW / Math.max(1, vw))));
 
     if(motionCanvas.width !== targetW || motionCanvas.height !== targetH){
       motionCanvas.width = targetW;
       motionCanvas.height = targetH;
-      prevGray = null;
-      prevW = targetW;
-      prevH = targetH;
+      motionW = targetW;
+      motionH = targetH;
+      bgGray = null;
     }
-    return {mw:targetW, mh:targetH, scaleX:vw / targetW, scaleY:vh / targetH};
+
+    return {
+      w: motionCanvas.width,
+      h: motionCanvas.height,
+      scaleBackX: vw / motionCanvas.width,
+      scaleBackY: vh / motionCanvas.height
+    };
   }
 
-  function makeGrayFrame(imageData){
-    const d = imageData.data;
-    const gray = new Uint8Array(d.length / 4);
-    for(let i=0, j=0; i<d.length; i+=4, j++){
-      gray[j] = ((d[i]*30 + d[i+1]*59 + d[i+2]*11) / 100) | 0;
+  function captureGray(){
+    mctx.drawImage(video, 0, 0, motionCanvas.width, motionCanvas.height);
+    const img = mctx.getImageData(0, 0, motionCanvas.width, motionCanvas.height);
+    const src = img.data;
+    const gray = new Uint8ClampedArray(motionCanvas.width * motionCanvas.height);
+
+    for(let i = 0, j = 0; i < src.length; i += 4, j++){
+      gray[j] = Math.round(src[i] * 0.299 + src[i + 1] * 0.587 + src[i + 2] * 0.114);
     }
     return gray;
   }
 
-  function dilateMask(src, w, h){
-    const out = new Uint8Array(src.length);
-    for(let y=1; y<h-1; y++){
-      for(let x=1; x<w-1; x++){
+  function buildMotionMask(gray, threshold){
+    const len = gray.length;
+
+    if(!bgGray || bgGray.length !== len){
+      bgGray = new Float32Array(len);
+      for(let i = 0; i < len; i++) bgGray[i] = gray[i];
+      return null;
+    }
+
+    const mask = new Uint8Array(len);
+    const diff = new Uint8Array(len);
+    let motionPixels = 0;
+
+    const alphaStill = 0.18;
+    const alphaMove = 0.02;
+
+    for(let i = 0; i < len; i++){
+      const delta = Math.abs(gray[i] - bgGray[i]);
+      diff[i] = delta;
+
+      if(delta >= threshold){
+        mask[i] = 1;
+        motionPixels++;
+        bgGray[i] = bgGray[i] * (1 - alphaMove) + gray[i] * alphaMove;
+      }else{
+        bgGray[i] = bgGray[i] * (1 - alphaStill) + gray[i] * alphaStill;
+      }
+    }
+
+    return { mask, diff, motionPixels };
+  }
+
+  function dilate(src, w, h){
+    const dst = new Uint8Array(src.length);
+    for(let y = 1; y < h - 1; y++){
+      for(let x = 1; x < w - 1; x++){
         let on = 0;
-        for(let dy=-1; dy<=1 && !on; dy++){
-          for(let dx=-1; dx<=1; dx++){
-            if(src[(y+dy)*w + (x+dx)]){
-              on = 1;
-              break;
-            }
+        for(let yy = -1; yy <= 1 && !on; yy++){
+          for(let xx = -1; xx <= 1; xx++){
+            if(src[(y + yy) * w + (x + xx)]){ on = 1; break; }
           }
         }
-        out[y*w + x] = on;
+        dst[y * w + x] = on;
       }
     }
-    return out;
+    return dst;
   }
 
-  function erodeMask(src, w, h){
-    const out = new Uint8Array(src.length);
-    for(let y=1; y<h-1; y++){
-      for(let x=1; x<w-1; x++){
+  function erode(src, w, h){
+    const dst = new Uint8Array(src.length);
+    for(let y = 1; y < h - 1; y++){
+      for(let x = 1; x < w - 1; x++){
         let on = 1;
-        for(let dy=-1; dy<=1 && on; dy++){
-          for(let dx=-1; dx<=1; dx++){
-            if(!src[(y+dy)*w + (x+dx)]){
-              on = 0;
-              break;
-            }
+        for(let yy = -1; yy <= 1 && on; yy++){
+          for(let xx = -1; xx <= 1; xx++){
+            if(!src[(y + yy) * w + (x + xx)]){ on = 0; break; }
           }
         }
-        out[y*w + x] = on;
+        dst[y * w + x] = on;
       }
     }
+    return dst;
+  }
+
+  function cleanMask(mask, w, h){
+    let out = dilate(mask, w, h);
+    out = erode(out, w, h);
+    out = dilate(out, w, h);
     return out;
   }
 
-  function findConnectedComponents(mask, w, h, maxObjects){
+  function convexHull(points){
+    if(!points || points.length < 3) return points ? points.slice() : [];
+
+    const pts = [];
+    for(let i = 0; i < points.length; i++){
+      const p = points[i];
+      pts.push({ x:p[0], y:p[1] });
+    }
+
+    pts.sort((a, b) => a.x === b.x ? a.y - b.y : a.x - b.x);
+
+    const uniq = [];
+    for(let i = 0; i < pts.length; i++){
+      const p = pts[i];
+      const last = uniq[uniq.length - 1];
+      if(!last || last.x !== p.x || last.y !== p.y) uniq.push(p);
+    }
+    if(uniq.length < 3) return uniq.map(p => [p.x, p.y]);
+
+    const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+
+    const lower = [];
+    for(let i = 0; i < uniq.length; i++){
+      const p = uniq[i];
+      while(lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0){
+        lower.pop();
+      }
+      lower.push(p);
+    }
+
+    const upper = [];
+    for(let i = uniq.length - 1; i >= 0; i--){
+      const p = uniq[i];
+      while(upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0){
+        upper.pop();
+      }
+      upper.push(p);
+    }
+
+    const hull = lower.slice(0, -1).concat(upper.slice(0, -1));
+    return hull.map(p => [p.x, p.y]);
+  }
+
+  function polygonArea(points){
+    if(!points || points.length < 3) return 0;
+    let sum = 0;
+    for(let i = 0; i < points.length; i++){
+      const a = points[i];
+      const b = points[(i + 1) % points.length];
+      sum += a[0] * b[1] - a[1] * b[0];
+    }
+    return Math.abs(sum) * 0.5;
+  }
+
+  function polygonPerimeter(points){
+    if(!points || points.length < 2) return 0;
+    let sum = 0;
+    for(let i = 0; i < points.length; i++){
+      const a = points[i];
+      const b = points[(i + 1) % points.length];
+      const dx = b[0] - a[0];
+      const dy = b[1] - a[1];
+      sum += Math.hypot(dx, dy);
+    }
+    return sum;
+  }
+
+  function extractCandidates(mask, diff, w, h, scaleBackX, scaleBackY, vw, vh, maxK){
     const visited = new Uint8Array(mask.length);
-    const comps = [];
-    const qx = new Int32Array(mask.length);
-    const qy = new Int32Array(mask.length);
+    const candidates = [];
 
-    for(let y=0; y<h; y++){
-      for(let x=0; x<w; x++){
-        const idx = y*w + x;
-        if(!mask[idx] || visited[idx]) continue;
+    const minArea = Math.max(36, Math.round(w * h * 0.0010));
+    const maxArea = Math.max(minArea + 1, Math.round(w * h * 0.30));
 
-        let head = 0, tail = 0;
-        qx[tail] = x;
-        qy[tail] = y;
-        tail++;
-        visited[idx] = 1;
+    for(let y = 1; y < h - 1; y++){
+      for(let x = 1; x < w - 1; x++){
+        const start = y * w + x;
+        if(!mask[start] || visited[start]) continue;
 
-        let minX = x, minY = y, maxX = x, maxY = y;
+        const stack = [start];
+        visited[start] = 1;
+
         let area = 0;
-        const points = [];
+        let sumX = 0;
+        let sumY = 0;
+        let diffSum = 0;
+        let minX = x, minY = y, maxX = x, maxY = y;
+        const boundary = [];
 
-        while(head < tail){
-          const cx = qx[head];
-          const cy = qy[head];
-          head++;
+        while(stack.length){
+          const idx = stack.pop();
+          const py = (idx / w) | 0;
+          const px = idx - py * w;
 
           area++;
-          points.push([cx, cy]);
+          sumX += px;
+          sumY += py;
+          diffSum += diff[idx];
+          if(px < minX) minX = px;
+          if(py < minY) minY = py;
+          if(px > maxX) maxX = px;
+          if(py > maxY) maxY = py;
 
-          if(cx < minX) minX = cx;
-          if(cy < minY) minY = cy;
-          if(cx > maxX) maxX = cx;
-          if(cy > maxY) maxY = cy;
+          let isBoundary = false;
 
-          for(let dy=-1; dy<=1; dy++){
-            for(let dx=-1; dx<=1; dx++){
-              if(dx === 0 && dy === 0) continue;
-              const nx = cx + dx;
-              const ny = cy + dy;
-              if(nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-              const nidx = ny*w + nx;
-              if(mask[nidx] && !visited[nidx]){
+          for(let yy = -1; yy <= 1; yy++){
+            for(let xx = -1; xx <= 1; xx++){
+              if(xx === 0 && yy === 0) continue;
+              const nx = px + xx;
+              const ny = py + yy;
+              if(nx < 0 || ny < 0 || nx >= w || ny >= h){
+                isBoundary = true;
+                continue;
+              }
+              const nidx = ny * w + nx;
+              if(!mask[nidx]){
+                isBoundary = true;
+                continue;
+              }
+              if(!visited[nidx]){
                 visited[nidx] = 1;
-                qx[tail] = nx;
-                qy[tail] = ny;
-                tail++;
+                stack.push(nidx);
               }
             }
           }
-        }
 
-        const bw = maxX - minX + 1;
-        const bh = maxY - minY + 1;
-        if(area >= 28 && bw >= 8 && bh >= 8){
-          comps.push({ minX, minY, maxX, maxY, bw, bh, area, points });
-        }
-      }
-    }
-
-    comps.sort((a,b)=> b.area - a.area);
-    return comps.slice(0, maxObjects);
-  }
-
-  function perimeterPointsFromMask(mask, w, h, comp){
-    const out = [];
-    const {minX, minY, maxX, maxY} = comp;
-    for(let y=minY; y<=maxY; y++){
-      for(let x=minX; x<=maxX; x++){
-        const idx = y*w + x;
-        if(!mask[idx]) continue;
-
-        let edge = false;
-        for(let dy=-1; dy<=1 && !edge; dy++){
-          for(let dx=-1; dx<=1; dx++){
-            if(dx===0 && dy===0) continue;
-            const nx = x + dx;
-            const ny = y + dy;
-            if(nx < 0 || ny < 0 || nx >= w || ny >= h){
-              edge = true;
-              break;
-            }
-            if(!mask[ny*w + nx]){
-              edge = true;
-              break;
-            }
+          if(isBoundary && ((px + py) % 2 === 0)){
+            boundary.push([(px + 0.5) * scaleBackX, (py + 0.5) * scaleBackY]);
           }
         }
-        if(edge) out.push([x, y]);
+
+        if(area < minArea || area > maxArea) continue;
+        if(boundary.length < 6) continue;
+
+        const hull = convexHull(boundary);
+        if(hull.length < 3) continue;
+
+        const bwPx = maxX - minX + 1;
+        const bhPx = maxY - minY + 1;
+        if(bwPx < 4 || bhPx < 4) continue;
+
+        const bx = minX * scaleBackX;
+        const by = minY * scaleBackY;
+        const bw = bwPx * scaleBackX;
+        const bh = bhPx * scaleBackY;
+        const cx = (sumX / area + 0.5) * scaleBackX;
+        const cy = (sumY / area + 0.5) * scaleBackY;
+
+        const hullArea = polygonArea(hull);
+        const hullPerimeter = polygonPerimeter(hull);
+        const circularity = hullPerimeter > 0 ? clamp((4 * Math.PI * hullArea) / (hullPerimeter * hullPerimeter), 0, 1.2) : 0;
+        const aspect = 1 - Math.abs(bw - bh) / Math.max(1, Math.max(bw, bh));
+        const fillRatio = area / Math.max(1, bwPx * bhPx);
+        const fillScore = clamp(1 - Math.abs(fillRatio - 0.72) / 0.72, 0, 1);
+        const motionScore = clamp((diffSum / Math.max(1, area)) / 80, 0, 1);
+        const areaScore = clamp((area / (w * h)) / 0.012, 0.20, 1.0);
+
+        const score = clamp(
+          (circularity * 0.45) +
+          (aspect * 0.25) +
+          (fillScore * 0.15) +
+          (motionScore * 0.15),
+          0,
+          1
+        ) * areaScore;
+
+        candidates.push({
+          bbox:[bx, by, bw, bh],
+          hull,
+          center:[cx, cy],
+          zone: zoneFromPoint(cx, cy, vw, vh),
+          score,
+          scorePercent: Math.round(score * 100),
+          circularity,
+          motionMean: diffSum / Math.max(1, area),
+          area,
+          aspect
+        });
       }
     }
-    return out;
+
+    candidates.sort((a, b) => b.score - a.score);
+    return candidates.slice(0, maxK);
   }
 
-  function motionDetect(vw, vh){
-    const prep = prepareMotionCanvas(vw, vh);
-    const {mw, mh, scaleX, scaleY} = prep;
-
-    motionCtx.drawImage(video, 0, 0, mw, mh);
-    const img = motionCtx.getImageData(0, 0, mw, mh);
-    const gray = makeGrayFrame(img);
-
-    if(!prevGray || prevW !== mw || prevH !== mh){
-      prevGray = gray;
-      prevW = mw;
-      prevH = mh;
-      return { candidates:[], mask:null, mw, mh, scaleX, scaleY };
-    }
-
-    const threshold = Number(thr.value);
-    let rawMask = new Uint8Array(gray.length);
-
-    for(let i=0; i<gray.length; i++){
-      const diff = Math.abs(gray[i] - prevGray[i]);
-      rawMask[i] = diff >= threshold ? 1 : 0;
-    }
-
-    // 노이즈 완화
-    rawMask = dilateMask(rawMask, mw, mh);
-    rawMask = erodeMask(rawMask, mw, mh);
-    rawMask = dilateMask(rawMask, mw, mh);
-
-    const comps = findConnectedComponents(rawMask, mw, mh, Number(topk.value));
-    const candidates = comps.map(c => ({
-      score: c.area,
-      bbox: [
-        Math.round(c.minX * scaleX),
-        Math.round(c.minY * scaleY),
-        Math.round(c.bw * scaleX),
-        Math.round(c.bh * scaleY)
-      ],
-      comp: c
-    }));
-
-    prevGray = gray;
-    return { candidates, mask:rawMask, mw, mh, scaleX, scaleY };
-  }
-
-  function drawMotionOutline(rect, perimeterPts, scaleX, scaleY){
-    if(!perimeterPts || !perimeterPts.length) return;
-
-    octx.save();
-    octx.strokeStyle = 'rgba(255, 235, 59, 0.95)';
-    octx.fillStyle = 'rgba(255, 235, 59, 0.85)';
-    octx.lineWidth = 1.5;
-
-    // 점을 너무 많이 그리면 무거워질 수 있어서 간격 샘플링
-    const step = Math.max(1, Math.floor(perimeterPts.length / 260));
-
+  function drawCenterCross(rect, cx, cy){
+    const px = rect.left + cx * rect.scaleX;
+    const py = rect.top  + cy * rect.scaleY;
+    octx.strokeStyle = 'rgba(0,255,220,0.95)';
+    octx.lineWidth = 2;
     octx.beginPath();
-    let first = true;
-    for(let i=0; i<perimeterPts.length; i += step){
-      const [mx, my] = perimeterPts[i];
-      const px = rect.left + (mx * scaleX) * rect.scaleX;
-      const py = rect.top  + (my * scaleY) * rect.scaleY;
-
-      if(first){
-        octx.moveTo(px, py);
-        first = false;
-      }else{
-        octx.lineTo(px, py);
-      }
-    }
+    octx.moveTo(px - 10, py); octx.lineTo(px + 10, py);
+    octx.moveTo(px, py - 10); octx.lineTo(px, py + 10);
     octx.stroke();
+  }
 
-    for(let i=0; i<perimeterPts.length; i += step){
-      const [mx, my] = perimeterPts[i];
-      const px = rect.left + (mx * scaleX) * rect.scaleX;
-      const py = rect.top  + (my * scaleY) * rect.scaleY;
-      octx.beginPath();
-      octx.arc(px, py, 1.6, 0, Math.PI*2);
-      octx.fill();
-    }
+  function resetDetectState(){
+    bgGray = null;
+    detCount.textContent = '—';
+    pickText.textContent = '—';
+    lightText.textContent = '—';
+    debug.textContent = '';
+  }
 
-    octx.restore();
+  async function loadEngine(){
+    modelStatus.textContent = '준비완료(Motion Contour)';
   }
 
   async function detectOnce(){
@@ -631,69 +711,77 @@
       const vh = video.videoHeight || 0;
       if(vw <= 0 || vh <= 0) return;
 
-      const result = motionDetect(vw, vh);
+      const motionInfo = prepareMotionCanvas(vw, vh);
+      const gray = captureGray();
+      const threshold = Number(thr.value);
+      const maxK = Number(topk.value);
+
+      const base = buildMotionMask(gray, threshold);
 
       resizeOverlay();
-      octx.clearRect(0,0, overlay.width, overlay.height);
+      octx.clearRect(0, 0, overlay.width, overlay.height);
 
       const rect = getDisplayRect();
       drawGrid(rect);
 
-      const objects = result.candidates.sort((a,b)=> b.score - a.score);
-      detCount.textContent = objects.length ? `${objects.length}개` : '0개';
-
-      if(!objects.length){
+      if(!base){
+        modelStatus.textContent = '배경 학습중…';
+        detCount.textContent = '0개';
         pickText.textContent = '—';
         lightText.textContent = '—';
-        const t1 = performance.now();
-        debug.textContent = `detect ${(t1-t0).toFixed(0)}ms · 후보 0개 · 민감도 ${thr.value}`;
+        debug.textContent = '배경 기준 프레임을 만드는 중입니다. 움직이는 물체를 잠시 보여 주세요.';
         return;
       }
 
-      const best = objects[0];
-      const [bx, by, bw, bh] = best.bbox;
-      const bcx = bx + bw/2;
-      const bcy = by + bh/2;
-      const bestZone = zoneFromPoint(bcx, bcy, vw, vh);
+      modelStatus.textContent = '준비완료(Motion Contour)';
 
-      drawZoneHighlight(rect, bestZone);
+      const cleaned = cleanMask(base.mask, motionInfo.w, motionInfo.h);
+      const candidates = extractCandidates(
+        cleaned,
+        base.diff,
+        motionInfo.w,
+        motionInfo.h,
+        motionInfo.scaleBackX,
+        motionInfo.scaleBackY,
+        vw,
+        vh,
+        maxK
+      );
 
-      for(let i=0;i<objects.length;i++){
-        const b = objects[i];
-        const [x,y,w,h] = b.bbox;
-        const cx = x + w/2;
-        const cy = y + h/2;
-        const z = zoneFromPoint(cx, cy, vw, vh);
-        const isBest = (i === 0);
-        const label = `motion ${Math.round(b.score)} · ${z}번`;
-        drawBox(rect, b.bbox, isBest, label);
+      detCount.textContent = candidates.length ? `${candidates.length}개` : '0개';
 
-        if(isBest){
-          const px = rect.left + cx * rect.scaleX;
-          const py = rect.top  + cy * rect.scaleY;
-          octx.strokeStyle = 'rgba(0,255,220,0.95)';
-          octx.lineWidth = 2;
-          octx.beginPath();
-          octx.moveTo(px-10, py); octx.lineTo(px+10, py);
-          octx.moveTo(px, py-10); octx.lineTo(px, py+10);
-          octx.stroke();
-        }
+      if(!candidates.length){
+        pickText.textContent = '—';
+        lightText.textContent = '—';
+        const t1 = performance.now();
+        debug.textContent =
+          `detect ${(t1 - t0).toFixed(0)}ms · motion px ${base.motionPixels} · threshold ${threshold} · 후보 0개`;
+        return;
       }
 
-      if(result.mask && best.comp){
-        const perimeter = perimeterPointsFromMask(result.mask, result.mw, result.mh, best.comp);
-        drawMotionOutline(rect, perimeter, result.scaleX, result.scaleY);
+      const best = candidates[0];
+      drawZoneHighlight(rect, best.zone);
+
+      for(let i = 0; i < candidates.length; i++){
+        const c = candidates[i];
+        const isBest = i === 0;
+        const label = `motion ${c.scorePercent}% · ${c.zone}번`;
+        drawContour(rect, c.hull, c.bbox, isBest, label);
       }
 
-      pickText.textContent = `${bestZone}번 · 움직임 ${Math.round(best.score)}`;
+      drawCenterCross(rect, best.center[0], best.center[1]);
+
+      pickText.textContent = `${best.zone}번 · ${best.scorePercent}%`;
 
       const light = computeBrightness(vw, vh, best.bbox);
       lightText.textContent = `${light.label} (Δ${light.diff.toFixed(0)})`;
 
       const t1 = performance.now();
       debug.textContent =
-        `detect ${(t1-t0).toFixed(0)}ms · period ${period.value}ms · sensitivity ${thr.value} · topK ${topk.value}\n` +
-        `ROI ${light.roiMean.toFixed(0)} / BG ${light.bgMean.toFixed(0)} / Δ${light.diff.toFixed(0)} · zone ${bestZone}`;
+        `detect ${(t1 - t0).toFixed(0)}ms · period ${period.value}ms · threshold ${threshold} · topK ${maxK}\n` +
+        `motion px ${base.motionPixels} · circularity ${best.circularity.toFixed(2)} · aspect ${best.aspect.toFixed(2)} · zone ${best.zone}\n` +
+        `ROI ${light.roiMean.toFixed(0)} / BG ${light.bgMean.toFixed(0)} / Δ${light.diff.toFixed(0)}`;
+
     }catch(e){
       console.error(e);
       debug.textContent = '오류: ' + e;
@@ -707,11 +795,13 @@
       requestAnimationFrame(loop);
       return;
     }
+
     const p = Number(period.value);
     if(ts - lastDetectAt >= p){
       lastDetectAt = ts;
       detectOnce();
     }
+
     requestAnimationFrame(loop);
   }
 
@@ -734,9 +824,9 @@
       camOn = true;
       camBtn.textContent = '캠 끄기';
       camBtn.classList.add('off');
+      modelStatus.textContent = '배경 학습중…';
 
-      prevGray = null;
-      motionReady = true;
+      bgGray = null;
       lastDetectAt = 0;
       resizeOverlay();
     }catch(e){
@@ -748,39 +838,31 @@
     if(!camOn) return;
     try{
       if(video.srcObject){
-        try{ video.srcObject.getTracks().forEach(t=>t.stop()); }catch(_e){}
+        try{ video.srcObject.getTracks().forEach(t => t.stop()); }catch(_e){}
         video.srcObject = null;
       }
-
       stream = null;
       camOn = false;
-      prevGray = null;
-      motionReady = false;
 
       camBtn.textContent = '캠 켜기';
       camBtn.classList.remove('off');
 
-      detCount.textContent = '—';
-      pickText.textContent = '—';
-      lightText.textContent = '—';
-      debug.textContent = '';
+      modelStatus.textContent = '준비완료(Motion Contour)';
+      resetDetectState();
 
       resizeOverlay();
-      octx.clearRect(0,0, overlay.width, overlay.height);
+      octx.clearRect(0, 0, overlay.width, overlay.height);
     }catch(_e){}
-  }
-
-  function init(){
-    resizeOverlay();
-    modelStatus.textContent = '준비완료(움직임 감지)';
-    requestAnimationFrame(loop);
   }
 
   camBtn.addEventListener('click', () => camOn ? stopCam() : startCam());
   window.addEventListener('resize', resizeOverlay);
 
-  init();
+  resizeOverlay();
+  loadEngine();
+  requestAnimationFrame(loop);
 })();
 </script>
+
 </body>
 </html>

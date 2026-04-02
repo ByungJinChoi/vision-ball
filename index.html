@@ -1,755 +1,1430 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
-  <title>흰색 공 찾기 · 공 확인 · 공 추적</title>
-  <style>
-    :root{
-      --bg:#0b0f14;
-      --fg:#e5e7eb;
-      --muted:#9ca3af;
-      --blue:#2563eb;
-      --red:#ef4444;
-      --green:#16a34a;
-      --yellow:#f59e0b;
-      --panel:rgba(0,0,0,.28);
-    }
-    *{ box-sizing:border-box; }
-    html,body{
-      height:100%;
-      margin:0;
-      background:var(--bg);
-      color:var(--fg);
-      font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
-    }
-    header{
-      padding:12px 14px;
-      border-bottom:1px solid rgba(255,255,255,.08);
-      display:flex;
-      gap:12px;
-      align-items:center;
-      flex-wrap:wrap;
-    }
-    .title{ font-weight:900; letter-spacing:.2px; }
-    .spacer{ flex:1 1 auto; }
-    .btn{
-      border:0;
-      border-radius:10px;
-      padding:10px 14px;
-      font-weight:900;
-      cursor:pointer;
-      color:white;
-      background:var(--blue);
-      box-shadow:0 6px 18px rgba(0,0,0,.25);
-    }
-    .btn.off{ background:var(--red); }
-    .btn.finding{ background:var(--yellow); color:#111827; }
-    .btn.tracking{ background:var(--green); }
-    .btn:disabled{ opacity:.45; cursor:not-allowed; }
-    .pill{
-      display:inline-flex;
-      align-items:center;
-      gap:8px;
-      padding:8px 10px;
-      border-radius:999px;
-      border:1px solid rgba(255,255,255,.14);
-      background:var(--panel);
-      font:800 13px/1 system-ui;
-      white-space:nowrap;
-    }
-    .muted{ color:var(--muted); font-weight:700; }
-    main{
-      height:calc(100vh - 68px);
-      display:flex;
-      flex-direction:column;
-      gap:12px;
-      padding:12px;
-    }
-    .stage{
-      flex:1 1 auto;
-      min-height:280px;
-      position:relative;
-      background:#000;
-      border-radius:14px;
-      overflow:hidden;
-      border:1px solid rgba(255,255,255,.10);
-    }
-    video{
-      width:100%;
-      height:100%;
-      object-fit:contain;
-      background:#000;
-    }
-    #overlay{
-      position:absolute;
-      inset:0;
-      width:100%;
-      height:100%;
-      pointer-events:none;
-    }
-    .footer{
-      display:flex;
-      gap:10px;
-      flex-wrap:wrap;
-      justify-content:space-between;
-      align-items:flex-start;
-    }
-    .small{
-      color:var(--muted);
-      font-size:12px;
-      line-height:1.55;
-      white-space:pre-wrap;
-    }
-    code{
-      color:#d1fae5;
-      background:rgba(16,185,129,.12);
-      border:1px solid rgba(16,185,129,.25);
-      padding:2px 6px;
-      border-radius:8px;
-      font-weight:900;
-    }
-  </style>
-  <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
+<meta charset="utf-8" />
+<title>XROBO BLE — 공 위치 인식 Edition</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
+<script src="https://unpkg.com/blockly/blockly.min.js"></script>
+<style>
+  :root{
+    --headerH:64px;
+    --logH:180px;
+    --rightW:40%;
+    --uiScale:1;
+    --blue:#1d4ed8;
+    --headerBgTop:#fff7ed;
+    --headerBgBottom:#fffbeb;
+    --headerBorder:#fed7aa;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; margin:0; }
+  body{ font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:#fff; }
+
+  header{
+    padding:8px 12px;
+    background:linear-gradient(180deg,var(--headerBgTop),var(--headerBgBottom));
+    border-bottom:1px solid var(--headerBorder);
+  }
+  #topbar{
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  }
+  .title{
+    font-weight:800; color:#7c2d12; margin-right:12px;
+    font-size:18px;
+  }
+  .spacer{ flex:1 1 auto; }
+  .btn{
+    height:36px; padding:0 12px; border:0; border-radius:10px;
+    display:inline-flex; align-items:center; justify-content:center;
+    font-size:14px; font-weight:600; cursor:pointer;
+    box-shadow:0 2px 8px rgba(0,0,0,.08);
+    background:#f3f4f6; color:#111827;
+  }
+  .btn.small{ height:30px; padding:0 10px; font-size:12px; }
+  #connectToggle{ background:#2563eb; color:#fff; }
+  #testBtn{ background:#0ea5e9; color:#fff; }
+  #runToggle{ background:#16a34a; color:#fff; }
+  #fsBtn{ background:#111827; color:#fff; }
+
+  .state{
+    display:inline-flex; align-items:center; gap:6px; height:36px;
+    padding:0 6px; font-size:12px;
+  }
+  .badgeDot{
+    width:22px; height:22px; border-radius:50%;
+    display:inline-flex; align-items:center; justify-content:center;
+    font-size:11px; font-weight:800; color:#fff;
+    box-shadow:0 0 0 4px rgba(0,0,0,.06) inset;
+  }
+  .badgeDot.on{ background:#3b82f6; }
+  .badgeDot.off{ background:#ef4444; }
+
+  #main{
+    display:flex; width:100%; height:calc(100vh - var(--headerH));
+  }
+  #left{
+    flex:1 1 auto; min-width:0; height:100%; display:flex;
+  }
+  #blocklyDiv{
+    width:100%; height:100%;
+  }
+  #hResizer{
+    flex:0 0 8px;
+    background:linear-gradient(90deg,#e5e7eb,#d1d5db);
+    border-left:1px solid #cbd5e1;
+    border-right:1px solid #cbd5e1;
+    cursor:col-resize;
+    touch-action:none;
+    margin:8px 0;
+  }
+  #right{
+    flex:0 0 var(--rightW);
+    width:var(--rightW);
+    min-width:0;
+    display:flex; flex-direction:column;
+    background:#fff;
+    margin:8px 8px 8px 0;
+    border:1px solid #e5e7eb;
+    border-left:3px solid var(--blue);
+    border-radius:12px 0 0 12px;
+    box-shadow:0 2px 10px rgba(0,0,0,.04);
+    overflow:hidden;
+  }
+  #rightTop{
+    flex:1 1 auto;
+    min-height:120px;
+    border-bottom:1px solid #e5e7eb;
+    background:#0b0f14;
+    display:flex; align-items:center; justify-content:center;
+    overflow:hidden;
+  }
+  .camWrap{
+    position:relative;
+    width:100%; height:100%;
+    background:#000;
+    display:flex; align-items:center; justify-content:center;
+  }
+  #camVideo, #eyesCam{
+    width:100%; height:100%;
+    object-fit:cover;
+    background:#000;
+    transform:scaleX(1);
+  }
+  #guideCanvas, #ovGuideCanvas{
+    position:absolute; inset:0; width:100%; height:100%;
+    pointer-events:none; z-index:2;
+  }
+  .camUi{
+    position:absolute;
+    left:50%; top:10px; transform:translateX(-50%);
+    width:min(92%,760px);
+    z-index:4;
+  }
+  .camToolbar{
+    display:flex; flex-wrap:wrap; gap:8px;
+    align-items:center; justify-content:center;
+    padding:8px 10px;
+    border-radius:14px;
+    background:rgba(0,0,0,.30);
+    border:1px solid rgba(255,255,255,.18);
+    backdrop-filter:blur(8px);
+  }
+  .camBadge{
+    font:700 12px/1 system-ui;
+    color:#fff;
+    padding:.35rem .6rem;
+    border-radius:999px;
+    border:1px solid rgba(255,255,255,.3);
+    background:rgba(255,255,255,.08);
+  }
+  .sliderGroup{
+    display:flex; align-items:center; gap:6px; min-width:150px;
+  }
+  .sliderGroup label{
+    font-size:11px; white-space:nowrap; color:#fff; opacity:.92;
+  }
+  .sliderGroup input[type="range"]{ width:92px; }
+  .sliderVal{
+    min-width:28px; text-align:right; font-size:11px;
+    color:#fde68a; font-weight:800;
+  }
+
+  #digitReadout, #overlayDigitBadge{
+    position:absolute;
+    left:50%; transform:translateX(-50%);
+    bottom:12px;
+    z-index:4;
+    display:inline-flex; align-items:center; gap:.55rem;
+    font:800 13px/1 system-ui;
+    color:#fff;
+    padding:.48rem .8rem;
+    border-radius:999px;
+    border:1px solid rgba(255,255,255,.35);
+    background:rgba(0,0,0,.35);
+    backdrop-filter:blur(6px);
+  }
+  #digitReadout .value, #overlayDigitBadge .value{
+    font:900 18px/1.1 ui-monospace, Menlo, Consolas, monospace;
+    padding:2px 8px;
+    border-radius:8px;
+    background:rgba(255,255,255,.12);
+    box-shadow:0 0 0 2px rgba(255,255,255,.18) inset;
+  }
+
+  #rightDivider{
+    flex:0 0 6px;
+    cursor:row-resize;
+    background:repeating-linear-gradient(90deg,#d1d5db 0,#d1d5db 6px,#e5e7eb 6px,#e5e7eb 12px);
+  }
+  #rightBottom{
+    flex:0 0 var(--logH);
+    display:flex; flex-direction:column; min-height:0;
+    overflow:hidden;
+    padding:10px;
+    background:#0b0f14; color:#d1e4ff;
+    border-top:1px solid #1f2937;
+  }
+  #log{
+    flex:1 1 0; min-height:0; overflow:auto; white-space:pre-wrap;
+    background:#0b0f14; border:1px solid #1f2937; border-radius:8px;
+    padding:10px;
+    font-family:ui-monospace,Menlo,Consolas,monospace;
+    font-size:12px; color:#d1e4ff;
+  }
+
+  .dropdown{ position:relative; }
+  .dropdown .menu{
+    position:absolute; right:0; top:calc(100% + 4px);
+    display:none; min-width:140px;
+    background:#fff; border:1px solid #d1d5db; border-radius:8px;
+    box-shadow:0 6px 16px rgba(0,0,0,.12);
+    padding:6px; z-index:1000;
+  }
+  .dropdown .menu.show{ display:block; }
+  .dropdown .menu > button{
+    width:100%; background:transparent; border:0; cursor:pointer;
+    padding:8px 10px; border-radius:6px; font-size:13px; text-align:left;
+    color:#111827;
+  }
+  .dropdown .menu > button:hover{ background:#f3f4f6; }
+  #fileBtn{ background:#6b7280; color:#fff; }
+
+  #playOverlay{
+    position:fixed; inset:0; background:#000; color:#fff;
+    display:none; z-index:10000;
+  }
+  #playOverlay.show{ display:block; }
+  #ovCamWrap{
+    position:relative; width:100%; height:100%;
+    display:flex; align-items:center; justify-content:center;
+    background:#000;
+  }
+
+  @media (max-width:880px){
+    .camToolbar{ gap:6px; padding:6px 8px; }
+    .sliderGroup{ min-width:126px; }
+    .sliderGroup input[type="range"]{ width:78px; }
+  }
+</style>
 </head>
 <body>
-  <header>
-    <div class="title">🎥 흰색 공 찾기 → 공 확인 → 공 추적</div>
+<header id="appHeader">
+  <div id="topbar">
+    <div class="title">XROBO v5 — 공 위치 인식</div>
     <div class="spacer"></div>
-    <button id="camBtn" class="btn">캠 켜기</button>
-    <button id="actionBtn" class="btn" disabled>공 찾기</button>
-    <span class="pill"><span class="muted">OpenCV</span> <span id="cvStatus">로딩중…</span></span>
-    <span class="pill"><span class="muted">상태</span> <span id="modeText">대기</span></span>
-    <span class="pill"><span class="muted">위치</span> <span id="posText">—</span></span>
-  </header>
 
-  <main>
-    <div class="stage" id="stage">
-      <video id="video" playsinline autoplay muted></video>
-      <canvas id="overlay"></canvas>
+    <div class="dropdown" id="fileDropdown">
+      <button id="fileBtn" class="btn">파일 ▾</button>
+      <div id="fileMenu" class="menu">
+        <button data-cmd="new">새로만들기</button>
+        <button data-cmd="save">저장하기</button>
+        <button data-cmd="load">불러오기</button>
+      </div>
     </div>
 
-    <div class="footer">
-      <div class="small">사용 순서
-1. <code>캠 켜기</code>
-2. <code>공 찾기</code>를 누른 뒤 흰색 공 1개를 화면 중앙에 둡니다.
-3. 공 둘레에 초록 원이 맞게 표시되면 <code>공 확인</code>을 누릅니다.
-4. 그 뒤에는 공 위치를 계속 동그라미로 표시합니다.
+    <span class="state"><span id="statusDot" class="badgeDot off">off</span></span>
+    <button id="connectToggle" class="btn">연결</button>
+    <button id="testBtn" class="btn">테스트</button>
+    <button id="runToggle" class="btn">실행</button>
+    <button id="fsBtn" class="btn">전체화면</button>
+  </div>
+</header>
 
-설정은 모두 빼고, 흰색 공 1개만 찾도록 단순화했습니다.</div>
-      <div class="small" id="debug"></div>
+<div id="main">
+  <div id="left">
+    <div id="blocklyDiv"></div>
+  </div>
+
+  <div id="hResizer"></div>
+
+  <div id="right">
+    <div id="rightTop">
+      <div class="camWrap" id="camWrap">
+        <video id="camVideo" playsinline autoplay muted></video>
+        <canvas id="guideCanvas"></canvas>
+
+        <div class="camUi">
+          <div class="camToolbar">
+            <span id="camBadge" class="camBadge">Cam: off</span>
+            <button id="camToggle" class="btn small">캠 켜기</button>
+            <button id="ballFindBtn" class="btn small" style="background:#f59e0b;color:#111827;">공찾기</button>
+
+            <div class="sliderGroup">
+              <label for="hTol">색상범위</label>
+              <input id="hTol" type="range" min="6" max="30" value="14">
+              <span id="hTolVal" class="sliderVal">14</span>
+            </div>
+            <div class="sliderGroup">
+              <label for="satMin">채도</label>
+              <input id="satMin" type="range" min="60" max="255" value="120">
+              <span id="satMinVal" class="sliderVal">120</span>
+            </div>
+            <div class="sliderGroup">
+              <label for="valMin">밝기</label>
+              <input id="valMin" type="range" min="40" max="255" value="70">
+              <span id="valMinVal" class="sliderVal">70</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="digitReadout">
+          <span class="label">공 위치</span>
+          <span class="value">—</span>
+        </div>
+      </div>
     </div>
-  </main>
+
+    <div id="rightDivider"></div>
+
+    <div id="rightBottom">
+      <div style="font-size:12px;color:#9ca3af;">실행 로그</div>
+      <div id="log"></div>
+    </div>
+  </div>
+</div>
+
+<xml id="toolbox" style="display:none">
+  <category name="이벤트" colour="#f59e0b">
+    <block type="xrobo_start"></block>
+  </category>
+  <category name="출력" colour="#60a5fa">
+    <block type="motor12_dd">
+      <field name="M1">20</field>
+      <field name="M2">20</field>
+      <field name="MS">500</field>
+    </block>
+    <block type="motor12_in">
+      <value name="M1"><shadow type="math_number"><field name="NUM">20</field></shadow></value>
+      <value name="M2"><shadow type="math_number"><field name="NUM">20</field></shadow></value>
+      <value name="MS"><shadow type="math_number"><field name="NUM">500</field></shadow></value>
+    </block>
+    <block type="melody">
+      <field name="PITCH">C4</field>
+      <value name="DUR"><shadow type="math_number"><field name="NUM">200</field></shadow></value>
+      <value name="WAIT"><shadow type="math_number"><field name="NUM">0</field></shadow></value>
+    </block>
+    <block type="led_ctrl">
+      <field name="TGT">OUT1</field>
+      <field name="MODE">BRIGHT</field>
+      <field name="VAL">10</field>
+    </block>
+  </category>
+  <category name="제어" colour="#10b981">
+    <block type="controls_repeat_ext">
+      <value name="TIMES"><shadow type="math_number"><field name="NUM">3</field></shadow></value>
+    </block>
+    <block type="wait_seconds">
+      <value name="SEC"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+    </block>
+  </category>
+</xml>
+
+<div id="playOverlay" aria-hidden="true">
+  <div id="ovCamWrap">
+    <video id="eyesCam" playsinline autoplay muted></video>
+    <canvas id="ovGuideCanvas"></canvas>
+
+    <div class="camUi" style="z-index:5;">
+      <div class="camToolbar">
+        <span class="camBadge">전체화면 실행중</span>
+        <button id="ovBallFindBtn" class="btn small" style="background:#f59e0b;color:#111827;">공찾기</button>
+
+        <div class="sliderGroup">
+          <label for="ovHTol">색상범위</label>
+          <input id="ovHTol" type="range" min="6" max="30" value="14">
+          <span id="ovHTolVal" class="sliderVal">14</span>
+        </div>
+        <div class="sliderGroup">
+          <label for="ovSatMin">채도</label>
+          <input id="ovSatMin" type="range" min="60" max="255" value="120">
+          <span id="ovSatMinVal" class="sliderVal">120</span>
+        </div>
+        <div class="sliderGroup">
+          <label for="ovValMin">밝기</label>
+          <input id="ovValMin" type="range" min="40" max="255" value="70">
+          <span id="ovValMinVal" class="sliderVal">70</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="overlayDigitBadge">
+      <span class="label">공 위치</span>
+      <span class="value">—</span>
+    </div>
+  </div>
+</div>
 
 <script>
-(() => {
-  const video = document.getElementById('video');
-  const stage = document.getElementById('stage');
-  const overlay = document.getElementById('overlay');
-  const octx = overlay.getContext('2d');
+/* ===== Blockly ===== */
+class XroboZelosProvider extends Blockly.zelos.ConstantProvider {
+  constructor(){ super(); this.ADD_START_HATS = true; }
+}
+class XroboZelosRenderer extends Blockly.zelos.Renderer {
+  constructor(){ super('xrobo_zelos'); }
+  makeConstants_(){ return new XroboZelosProvider(); }
+}
+Blockly.blockRendering.register('xrobo_zelos', XroboZelosRenderer);
+const XroboTheme = Blockly.Theme.defineTheme('xrobo_theme', {
+  base: Blockly.Themes.Zelos,
+  componentStyles: { startHats: true }
+});
+var ws = Blockly.inject('blocklyDiv', {
+  toolbox: document.getElementById('toolbox'),
+  renderer: 'xrobo_zelos',
+  theme: XroboTheme,
+  grid: { spacing:20, length:3, colour:'#eee', snap:true },
+  zoom: { controls:true, wheel:true, startScale:1, minScale:0.5, maxScale:2 },
+  move: { scrollbars:true, drag:true, wheel:true },
+  trashcan: true
+});
 
-  const camBtn = document.getElementById('camBtn');
-  const actionBtn = document.getElementById('actionBtn');
-  const cvStatus = document.getElementById('cvStatus');
-  const modeText = document.getElementById('modeText');
-  const posText = document.getElementById('posText');
-  const debug = document.getElementById('debug');
+/* ===== 공 위치 이벤트 ===== */
+const DIGIT_OPTIONS = [
+  ["중앙","B_CENTER"],
+  ["멀리 있음","B_FAR"],
+  ["가까이 있음","B_NEAR"],
+  ["왼쪽","B_LEFT"],
+  ["오른쪽","B_RIGHT"]
+];
+var PINS_OUT=[["OUT1","OUT1"],["OUT2","OUT2"],["OUT3","OUT3"],["OUT4","OUT4"],["OUT5","OUT5"],["OUT6","OUT6"],["OUT7","OUT7"],["OUT8","OUT8"]];
+var SPEEDS=Array.from({length:41},(_,i)=>20-i).map(v=>[String(v),String(v)]);
+var TIMES100=Array.from({length:10},(_,i)=>100*(i+1)).map(v=>[String(v),String(v)]);
+var LED_TGT=[].concat(PINS_OUT,[["CPU","CPU"]]);
+var LED_MODE=[["밝기","BRIGHT"],["숨쉬기","BREATHE"]];
+var LED_VALS=Array.from({length:20},(_,i)=>[String(i),String(i)]);
 
-  const PROCESS_MS = 100;
-
-  let stream = null;
-  let camOn = false;
-  let cvReady = false;
-  let mode = 'idle'; // idle | finding | tracking
-  let busy = false;
-  let lastAt = 0;
-
-  let currentCandidate = null;
-  let confirmedBall = null;
-  let trackedBall = null;
-  let lostCount = 0;
-
-  const workCanvas = document.createElement('canvas');
-  const workCtx = workCanvas.getContext('2d', { willReadFrequently: true });
-
-  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
-
-  function resizeOverlay(){
-    const dpr = Math.max(1, window.devicePixelRatio || 1);
-    const w = stage.clientWidth || 1;
-    const h = stage.clientHeight || 1;
-    overlay.width = Math.round(w * dpr);
-    overlay.height = Math.round(h * dpr);
-    overlay.style.width = w + 'px';
-    overlay.style.height = h + 'px';
-    octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+Blockly.defineBlocksWithJsonArray([
+  {
+    "type":"xrobo_start",
+    "message0":"공 위치 %1 이면",
+    "args0":[{ "type":"field_dropdown","name":"DIGIT","options": DIGIT_OPTIONS }],
+    "nextStatement":null,
+    "colour":36,
+    "hat":"cap"
+  },
+  {
+    "type":"motor12_dd",
+    "message0":"모터 M1 %1  M2 %2  시간 %3 ms",
+    "args0":[
+      {"type":"field_dropdown","name":"M1","options":SPEEDS},
+      {"type":"field_dropdown","name":"M2","options":SPEEDS},
+      {"type":"field_dropdown","name":"MS","options":TIMES100}
+    ],
+    "previousStatement":null,
+    "nextStatement":null,
+    "inputsInline":true,
+    "colour":210
+  },
+  {
+    "type":"motor12_in",
+    "message0":"모터 M1 %1  M2 %2  시간 %3 ms",
+    "args0":[
+      {"type":"input_value","name":"M1","check":"Number"},
+      {"type":"input_value","name":"M2","check":"Number"},
+      {"type":"input_value","name":"MS","check":"Number"}
+    ],
+    "previousStatement":null,
+    "nextStatement":null,
+    "inputsInline":true,
+    "colour":210
+  },
+  {
+    "type":"melody",
+    "message0":"멜로디 음높이 %1 소리시간 %2 ms 대기시간 %3 ms",
+    "args0":[
+      {"type":"field_dropdown","name":"PITCH","options":(function(){
+        var KR=["도","레","미","파","솔","라","시"], EN=["C","D","E","F","G","A","B"], L=[];
+        for(var o=4;o<=6;o++) for(var i=0;i<7;i++) L.push([KR[i]+o, EN[i]+o]);
+        return L;
+      })()},
+      {"type":"input_value","name":"DUR","check":"Number"},
+      {"type":"input_value","name":"WAIT","check":"Number"}
+    ],
+    "previousStatement":null,
+    "nextStatement":null,
+    "inputsInline":true,
+    "colour":300
+  },
+  {
+    "type":"led_ctrl",
+    "message0":"LED %1 모드 %2 값 %3",
+    "args0":[
+      {"type":"field_dropdown","name":"TGT","options":LED_TGT},
+      {"type":"field_dropdown","name":"MODE","options":LED_MODE},
+      {"type":"field_dropdown","name":"VAL","options":LED_VALS}
+    ],
+    "previousStatement":null,
+    "nextStatement":null,
+    "inputsInline":true,
+    "colour":330
+  },
+  {
+    "type":"wait_seconds",
+    "message0":"%1 초 기다리기",
+    "args0":[{"type":"input_value","name":"SEC","check":"Number"}],
+    "previousStatement":null,
+    "nextStatement":null,
+    "inputsInline":true,
+    "colour":120
   }
+]);
 
-  function getDisplayRect(){
-    const vw = video.videoWidth || 0;
-    const vh = video.videoHeight || 0;
-    const ww = stage.clientWidth || 1;
-    const wh = stage.clientHeight || 1;
-    if(vw <= 0 || vh <= 0) return { left:0, top:0, width:ww, height:wh, scale:1 };
-    const s = Math.min(ww / vw, wh / vh);
-    const dw = vw * s;
-    const dh = vh * s;
-    return { left:(ww - dw) / 2, top:(wh - dh) / 2, width:dw, height:dh, scale:s };
-  }
-
-  function toViewCircle(circle){
-    const rect = getDisplayRect();
-    return {
-      x: rect.left + circle.x * rect.scale,
-      y: rect.top + circle.y * rect.scale,
-      r: circle.r * rect.scale
-    };
-  }
-
-  function clearOverlay(){
-    octx.clearRect(0, 0, stage.clientWidth, stage.clientHeight);
-  }
-
-  function drawCenterGuide(){
-    const rect = getDisplayRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    const guideR = Math.max(28, Math.min(rect.width, rect.height) * 0.10);
-
-    octx.save();
-    octx.strokeStyle = 'rgba(255,255,255,.45)';
-    octx.lineWidth = 2;
-    octx.setLineDash([8, 6]);
-    octx.beginPath();
-    octx.arc(cx, cy, guideR, 0, Math.PI * 2);
-    octx.stroke();
-    octx.setLineDash([]);
-
-    octx.beginPath();
-    octx.moveTo(cx - 16, cy);
-    octx.lineTo(cx + 16, cy);
-    octx.moveTo(cx, cy - 16);
-    octx.lineTo(cx, cy + 16);
-    octx.stroke();
-    octx.restore();
-  }
-
-  function drawLabel(text, x, y){
-    octx.font = '900 14px system-ui';
-    const padX = 8;
-    const boxW = octx.measureText(text).width + padX * 2;
-    const boxH = 24;
-    const drawX = clamp(x - boxW / 2, 6, stage.clientWidth - boxW - 6);
-    const drawY = clamp(y, 6, stage.clientHeight - boxH - 6);
-    octx.fillStyle = 'rgba(0,0,0,.72)';
-    octx.fillRect(drawX, drawY, boxW, boxH);
-    octx.fillStyle = '#ffffff';
-    octx.fillText(text, drawX + padX, drawY + 16);
-  }
-
-  function drawCircle(circle, color, label){
-    const v = toViewCircle(circle);
-    const rr = Math.max(8, v.r);
-
-    octx.strokeStyle = color;
-    octx.lineWidth = 4;
-    octx.beginPath();
-    octx.arc(v.x, v.y, rr, 0, Math.PI * 2);
-    octx.stroke();
-
-    octx.fillStyle = color;
-    octx.beginPath();
-    octx.arc(v.x, v.y, 4, 0, Math.PI * 2);
-    octx.fill();
-
-    if(label) drawLabel(label, v.x, v.y - rr - 30);
-  }
-
-  function drawFindingOverlay(){
-    clearOverlay();
-    drawCenterGuide();
-    if(currentCandidate){
-      drawCircle(currentCandidate, '#22c55e', '공 후보');
-      const v = toViewCircle(currentCandidate);
-      octx.strokeStyle = 'rgba(34,197,94,.7)';
-      octx.lineWidth = 1.5;
-      octx.beginPath();
-      octx.moveTo(v.x, v.y);
-      const rect = getDisplayRect();
-      octx.lineTo(rect.left + rect.width / 2, rect.top + rect.height / 2);
-      octx.stroke();
-    } else {
-      drawLabel('공을 중앙에 맞춰 주세요', stage.clientWidth / 2, 16);
+function numFromInput(parent, name, def){
+  if (def===void 0) def=0;
+  var raw = Blockly.JavaScript ? Blockly.JavaScript.valueToCode(parent, name, Blockly.JavaScript.ORDER_NONE) : "";
+  var n = Number(raw != null ? raw : '');
+  return (isFinite(n) ? n : def);
+}
+function walkNode(b, list){
+  if(!b) return;
+  switch(b.type){
+    case 'motor12_dd':{
+      var v1=+b.getFieldValue('M1'), v2=+b.getFieldValue('M2'), ms=+b.getFieldValue('MS');
+      list.push({type:'CMD',s:'M12 '+v1+' '+v2+' '+ms});
+      if(ms>0) list.push({type:'W',args:[ms]});
+      break;
+    }
+    case 'motor12_in':{
+      var v1n=numFromInput(b,'M1',0), v2n=numFromInput(b,'M2',0), msn=numFromInput(b,'MS',0);
+      list.push({type:'CMD',s:'M12 '+Math.round(v1n)+' '+Math.round(v2n)+' '+Math.round(msn)});
+      if(msn>0) list.push({type:'W',args:[msn]});
+      break;
+    }
+    case 'melody':{
+      var p=b.getFieldValue('PITCH'), dur=numFromInput(b,'DUR',200), wait=numFromInput(b,'WAIT',0);
+      list.push({type:'CMD',s:'MEL '+p+' '+Math.round(dur)+' '+Math.round(wait)});
+      if(wait>0) list.push({type:'W',args:[wait]});
+      break;
+    }
+    case 'led_ctrl':{
+      var t=b.getFieldValue('TGT'), m=b.getFieldValue('MODE'), v=+b.getFieldValue('VAL');
+      list.push({type:'CMD',s:'LED '+t+' '+m+' '+v});
+      break;
+    }
+    case 'controls_repeat_ext':{
+      var times=Math.max(0, numFromInput(b,'TIMES',1));
+      var inner=[], first=b.getInputTargetBlock('DO');
+      walkChain(first, inner);
+      list.push({type:'FOR',count:times,body:inner});
+      break;
+    }
+    case 'wait_seconds':{
+      var s=numFromInput(b,'SEC',1);
+      if(s>0) list.push({type:'W',args:[s*1000]});
+      break;
     }
   }
-
-  function drawTrackingOverlay(lost = false){
-    clearOverlay();
-    if(trackedBall){
-      drawCircle(trackedBall, lost ? '#f59e0b' : '#22c55e', lost ? '잠시 놓침' : '공 위치');
+}
+function walkChain(start, list){
+  for(var n=start; n; n=n.getNextBlock()) walkNode(n, list);
+}
+function normalizeProgram(list){
+  var out=[];
+  for(var i=0;i<list.length;i++){
+    var ins=list[i];
+    if(ins.type==='CMD'){
+      var prev=out[out.length-1];
+      if(prev && prev.type==='CMD' && prev.s===ins.s) continue;
+    }else if(ins.type==='W'){
+      if(!isFinite(ins.args && ins.args[0]) || ins.args[0]<=0) continue;
+      var prevw=out[out.length-1];
+      if(prevw && prevw.type==='W'){ prevw.args[0]+=ins.args[0]; continue; }
     }
+    out.push(ins);
   }
+  return out;
+}
+function buildEventPrograms(){
+  const programs = { B_CENTER:[], B_FAR:[], B_NEAR:[], B_LEFT:[], B_RIGHT:[] };
+  var evs = ws.getBlocksByType('xrobo_start', true);
+  for(var i=0;i<evs.length;i++){
+    var code = evs[i].getFieldValue('DIGIT') || 'B_CENTER';
+    var chain = evs[i].getNextBlock();
+    if(!chain) continue;
+    var prog=[]; walkChain(chain, prog);
+    var norm = normalizeProgram(prog);
+    if(!programs[code]) programs[code] = [];
+    programs[code] = programs[code].concat(norm);
+  }
+  return programs;
+}
 
-  function rgbToHsv(r, g, b){
-    r /= 255; g /= 255; b /= 255;
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    const d = max - min;
-    let h = 0;
-    if(d !== 0){
-      switch(max){
-        case r: h = 60 * (((g - b) / d) % 6); break;
-        case g: h = 60 * (((b - r) / d) + 2); break;
-        case b: h = 60 * (((r - g) / d) + 4); break;
+/* ===== 공용 UI ===== */
+function $(id){ return document.getElementById(id); }
+function log(m){
+  const el = $('log');
+  el.textContent += m + "\n";
+  el.scrollTop = el.scrollHeight;
+}
+function applyHeaderHeight(){
+  var px = $('appHeader').offsetHeight || 64;
+  document.documentElement.style.setProperty('--headerH', px+'px');
+  setTimeout(function(){ Blockly.svgResize(ws); }, 60);
+}
+window.addEventListener('resize', applyHeaderHeight);
+document.addEventListener('fullscreenchange', applyHeaderHeight);
+applyHeaderHeight();
+
+/* ===== BLE ===== */
+var SERVICE_UUID=0xFFF0;
+var bleDevice=null,bleServer=null,bleService=null,writeChar=null,notifyChar=null;
+var isConnected=false, isRunning=false, isFullscreenRun=false;
+var queue = [], queueBusy = false, cancelToken = 0;
+var eventPrograms = {};
+var enc = s=> new TextEncoder().encode(s);
+
+function resetBleRefs(){ bleDevice=null; bleServer=null; bleService=null; writeChar=null; notifyChar=null; }
+function setConnected(v){
+  isConnected=v;
+  $('connectToggle').textContent=v?'해제':'연결';
+  $('statusDot').classList.toggle('on',v);
+  $('statusDot').classList.toggle('off',!v);
+  $('statusDot').textContent=v?'on':'off';
+  if(!v) setRunning(false);
+}
+function setRunning(v){
+  isRunning=v;
+  $('runToggle').textContent = v ? '■ 정지' : '실행';
+  $('runToggle').style.background = v ? '#ef4444' : '#16a34a';
+  $('testBtn').disabled = v;
+}
+function onDisconnected(){
+  log('🔌 해제됨');
+  setConnected(false);
+  resetBleRefs();
+}
+async function connectBLE(){
+  if(!navigator.bluetooth){
+    alert('이 브라우저는 Web Bluetooth 미지원입니다.');
+    return;
+  }
+  try{
+    const dev = await navigator.bluetooth.requestDevice({
+      filters:[{ namePrefix:'XROBO' }],
+      optionalServices:[SERVICE_UUID, 0xFFF3, 0xFFF4]
+    });
+    resetBleRefs();
+    bleDevice=dev;
+    bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
+    bleServer=await bleDevice.gatt.connect();
+    bleService=await bleServer.getPrimaryService(SERVICE_UUID);
+
+    try{ writeChar=await bleService.getCharacteristic(0xFFF3);}catch(e){}
+    try{ notifyChar=await bleService.getCharacteristic(0xFFF4);}catch(e){}
+    if(!writeChar || notifyChar==null){
+      const cs=await bleService.getCharacteristics();
+      for(const ch of cs){
+        const p=ch.properties||{};
+        if(!writeChar && (p.write||p.writeWithoutResponse)) writeChar=ch;
+        if(!notifyChar && p.notify) notifyChar=ch;
       }
     }
-    if(h < 0) h += 360;
-    const s = max === 0 ? 0 : d / max;
-    return { h, s: s * 255, v: max * 255 };
+    if(!writeChar) throw new Error('write 특성을 찾지 못했습니다.');
+
+    if(notifyChar){
+      await notifyChar.startNotifications();
+      notifyChar.addEventListener('characteristicvaluechanged',function(ev){
+        try{
+          const v=new TextDecoder().decode(ev.target.value||new Uint8Array());
+          log('⬅️ '+v.trim());
+        }catch(e){}
+      });
+    }
+    setConnected(true);
+    log('✅ 연결: '+(dev.name||'(이름 없음)'));
+  }catch(e){
+    log('❌ 연결 실패: '+e);
+    setConnected(false);
+    resetBleRefs();
   }
+}
+function disconnectBLE(){
+  try{ if (bleDevice && bleDevice.gatt) bleDevice.gatt.disconnect(); }catch(e){}
+  setConnected(false);
+  resetBleRefs();
+}
+$('connectToggle').onclick = ()=> isConnected ? disconnectBLE() : connectBLE();
 
-  function sampleBallInfo(cx, cy, r){
-    const vw = video.videoWidth;
-    const vh = video.videoHeight;
-    if(!vw || !vh) return null;
-
-    workCanvas.width = vw;
-    workCanvas.height = vh;
-    workCtx.drawImage(video, 0, 0, vw, vh);
-
-    const x0 = Math.max(0, Math.floor(cx - r * 0.85));
-    const y0 = Math.max(0, Math.floor(cy - r * 0.85));
-    const w = Math.max(1, Math.floor(r * 1.7));
-    const h = Math.max(1, Math.floor(r * 1.7));
-    const img = workCtx.getImageData(x0, y0, Math.min(w, vw - x0), Math.min(h, vh - y0));
-
-    const mx = img.width / 2;
-    const my = img.height / 2;
-    const rr = Math.min(mx, my) * 0.92;
-    let n = 0;
-    let sSum = 0;
-    let vSum = 0;
-    let brightSum = 0;
-    let whiteCount = 0;
-
-    for(let y = 0; y < img.height; y++){
-      for(let x = 0; x < img.width; x++){
-        const dx = x - mx;
-        const dy = y - my;
-        if(dx * dx + dy * dy > rr * rr) continue;
-        const i = (y * img.width + x) * 4;
-        const r0 = img.data[i];
-        const g0 = img.data[i + 1];
-        const b0 = img.data[i + 2];
-        const hsv = rgbToHsv(r0, g0, b0);
-        sSum += hsv.s;
-        vSum += hsv.v;
-        brightSum += (r0 + g0 + b0) / 3;
-        if(hsv.s <= 90 && hsv.v >= 160) whiteCount++;
-        n++;
+function sendRaw(s){
+  if(!writeChar){
+    log('➡️(BLE 미연결) '+s);
+    return Promise.resolve();
+  }
+  return writeChar.writeValue(enc(s+'\n')).then(()=> log('➡️ '+s)).catch(e=> log('⚠️ 전송 실패: '+e));
+}
+async function runList(list, localToken){
+  for(const ins of list){
+    if(localToken !== cancelToken) return;
+    if(ins.type==='CMD') await sendRaw(ins.s);
+    else if(ins.type==='W') await new Promise(r=>setTimeout(r, ins.args[0]||0));
+    else if(ins.type==='FOR'){
+      for(let k=0;k<ins.count;k++){
+        if(localToken !== cancelToken) return;
+        await runList(ins.body, localToken);
       }
     }
-
-    if(!n) return null;
-    return {
-      sMean: sSum / n,
-      vMean: vSum / n,
-      brightMean: brightSum / n,
-      whiteRatio: whiteCount / n
-    };
   }
-
-  function getFrameMat(maxSide = 720){
-    const vw = video.videoWidth;
-    const vh = video.videoHeight;
-    let scale = 1;
-    const maxDim = Math.max(vw, vh);
-    if(maxDim > maxSide) scale = maxSide / maxDim;
-    const w = Math.max(1, Math.round(vw * scale));
-    const h = Math.max(1, Math.round(vh * scale));
-    workCanvas.width = w;
-    workCanvas.height = h;
-    workCtx.drawImage(video, 0, 0, w, h);
-    const src = cv.imread(workCanvas);
-    return { src, scale, w, h };
+}
+async function processQueue(localToken){
+  if(queueBusy) return;
+  queueBusy = true;
+  try{
+    while(queue.length && localToken === cancelToken){
+      const item = queue.shift();
+      await runList(item.list, localToken);
+    }
+  }finally{
+    queueBusy = false;
+    panelLastDetectTs = 0;
+    overlayLastDetectTs = 0;
   }
-
-  function buildWhiteMask(src, satMax, valMin){
-    const rgb = new cv.Mat();
-    const hsv = new cv.Mat();
-    const mask = new cv.Mat();
-    const low = new cv.Mat(src.rows, src.cols, cv.CV_8UC3, [0, 0, valMin]);
-    const high = new cv.Mat(src.rows, src.cols, cv.CV_8UC3, [179, satMax, 255]);
-
-    cv.cvtColor(src, rgb, cv.COLOR_RGBA2RGB);
-    cv.cvtColor(rgb, hsv, cv.COLOR_RGB2HSV);
-    cv.inRange(hsv, low, high, mask);
-
-    const kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(5, 5));
-    cv.morphologyEx(mask, mask, cv.MORPH_OPEN, kernel);
-    cv.morphologyEx(mask, mask, cv.MORPH_CLOSE, kernel);
-    cv.GaussianBlur(mask, mask, new cv.Size(7, 7), 0, 0, cv.BORDER_DEFAULT);
-    cv.threshold(mask, mask, 120, 255, cv.THRESH_BINARY);
-
-    rgb.delete();
-    hsv.delete();
-    low.delete();
-    high.delete();
-    kernel.delete();
-
-    return mask;
+}
+function eventLabelFromCode(code){
+  switch(code){
+    case 'B_CENTER': return '중앙';
+    case 'B_FAR': return '멀리 있음';
+    case 'B_NEAR': return '가까이 있음';
+    case 'B_LEFT': return '왼쪽';
+    case 'B_RIGHT': return '오른쪽';
+    default: return String(code||'');
   }
+}
+function triggerEvent(name, conf, source){
+  var label = eventLabelFromCode(name);
+  if(!isRunning){
+    log(`⏸ 실행 중이 아니라 이벤트를 실행하지 않습니다. (${label})`);
+    return;
+  }
+  if(!eventPrograms || !eventPrograms[name]){
+    try{ eventPrograms = buildEventPrograms(); }catch(e){}
+  }
+  var seq = eventPrograms[name];
+  if(!seq || !seq.length){
+    log(`⚠️ 이벤트 ${label} 에 연결된 블록이 없습니다.`);
+    return;
+  }
+  log(`③ 이벤트 ${label} 실행 (${seq.length}개 명령, ${conf.toFixed(1)}%)`);
+  queue.push({list: seq.slice()});
+  processQueue(cancelToken);
+}
 
-  function contourToCircle(cnt){
-    if(cv.minEnclosingCircle){
-      const circle = cv.minEnclosingCircle(cnt);
-      if(circle && circle.center && Number.isFinite(circle.radius)) {
-        return { x: circle.center.x, y: circle.center.y, r: circle.radius };
+/* ===== 저장/불러오기 ===== */
+function serializeProject(){
+  var xmlDom = Blockly.Xml.workspaceToDom(ws);
+  var xmlText = Blockly.Xml.domToText(xmlDom);
+  return JSON.stringify({type:'xrobo_project_v1', xml: xmlText}, null, 2);
+}
+function saveProject(){
+  const data = serializeProject();
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([data], {type:'application/json'}));
+  a.download='xrobo_project.json';
+  a.click();
+  setTimeout(()=> URL.revokeObjectURL(a.href), 1000);
+  log('💾 저장 완료');
+}
+function loadProject(){
+  const input=document.createElement('input');
+  input.type='file';
+  input.accept='.json,application/json';
+  input.onchange=async ()=>{
+    const file = input.files && input.files[0];
+    if(!file) return;
+    const text = await file.text();
+    const obj = JSON.parse(text);
+    ws.clear();
+    var parser = new DOMParser();
+    var xml = parser.parseFromString(obj.xml, 'text/xml');
+    Blockly.Xml.domToWorkspace(xml.documentElement, ws);
+    log('📂 불러오기 완료');
+  };
+  input.click();
+}
+(function(){
+  const btn=$('fileBtn'), menu=$('fileMenu');
+  btn.addEventListener('click', function(e){
+    e.stopPropagation();
+    menu.classList.toggle('show');
+  });
+  document.addEventListener('click', function(){ menu.classList.remove('show'); });
+  menu.addEventListener('click', function(e){
+    const cmd = e.target.getAttribute('data-cmd');
+    if(cmd==='save') saveProject();
+    else if(cmd==='load') loadProject();
+    else if(cmd==='new'){
+      if(confirm('현재 프로젝트를 모두 지우고 새로 만들까요?')){
+        ws.clear();
+        log('🆕 새 프로젝트');
       }
     }
-    const rect = cv.boundingRect(cnt);
-    return {
-      x: rect.x + rect.width / 2,
-      y: rect.y + rect.height / 2,
-      r: Math.max(rect.width, rect.height) / 2
-    };
+    menu.classList.remove('show');
+  });
+})();
+
+/* ===== 카메라 + 공 인식 ===== */
+const camWrap = $('camWrap');
+const camVideo = $('camVideo');
+const eyesCam = $('eyesCam');
+const guideCanvas = $('guideCanvas');
+const ovGuideCanvas = $('ovGuideCanvas');
+const guideCtx = guideCanvas.getContext('2d');
+const ovGuideCtx = ovGuideCanvas.getContext('2d');
+const digitValEl = $('digitReadout').querySelector('.value');
+const overlayDigitVal = $('overlayDigitBadge').querySelector('.value');
+const camBadge = $('camBadge');
+const camToggle = $('camToggle');
+const ballFindBtn = $('ballFindBtn');
+const ovBallFindBtn = $('ovBallFindBtn');
+
+const hTol = $('hTol');
+const satMin = $('satMin');
+const valMin = $('valMin');
+const hTolVal = $('hTolVal');
+const satMinVal = $('satMinVal');
+const valMinVal = $('valMinVal');
+
+const ovHTol = $('ovHTol');
+const ovSatMin = $('ovSatMin');
+const ovValMin = $('ovValMin');
+const ovHTolVal = $('ovHTolVal');
+const ovSatMinVal = $('ovSatMinVal');
+const ovValMinVal = $('ovValMinVal');
+
+function updateSliderText(){
+  hTolVal.textContent = hTol.value;
+  satMinVal.textContent = satMin.value;
+  valMinVal.textContent = valMin.value;
+  ovHTolVal.textContent = ovHTol.value;
+  ovSatMinVal.textContent = ovSatMin.value;
+  ovValMinVal.textContent = ovValMin.value;
+}
+function syncOverlaySlidersFromPanel(){
+  ovHTol.value = hTol.value;
+  ovSatMin.value = satMin.value;
+  ovValMin.value = valMin.value;
+  updateSliderText();
+}
+function syncPanelSlidersFromOverlay(){
+  hTol.value = ovHTol.value;
+  satMin.value = ovSatMin.value;
+  valMin.value = ovValMin.value;
+  updateSliderText();
+}
+[hTol,satMin,valMin].forEach(el=>el.addEventListener('input', ()=>{ syncOverlaySlidersFromPanel(); }));
+[ovHTol,ovSatMin,ovValMin].forEach(el=>el.addEventListener('input', ()=>{ syncPanelSlidersFromOverlay(); }));
+updateSliderText();
+syncOverlaySlidersFromPanel();
+
+const PROCESS_MS = 500;
+const ORANGE_HUE = 18;
+let camStream = null, camOn = false;
+let camRAF = null, overlayRAF = null;
+let panelLastDetectTs = 0, overlayLastDetectTs = 0;
+let ballFinding = false, ballFindingOverlay = false;
+let currentBall = null, currentBallOverlay = null;
+let lastStateKey = null, lastLogTs = 0;
+
+const workCanvas = document.createElement('canvas');
+const workCtx = workCanvas.getContext('2d', { willReadFrequently:true });
+
+function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+
+function updateCamUi(){
+  camBadge.textContent = 'Cam: ' + (camOn ? 'on' : 'off');
+  camToggle.textContent = camOn ? '캠 끄기' : '캠 켜기';
+}
+function updateDigitReadout(v){ digitValEl.textContent = v == null ? '—' : String(v); }
+function overlayShowDigit(v){ overlayDigitVal.textContent = v == null ? '—' : String(v); }
+
+function resizeCanvasToWrap(canvas, wrap){
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const w = wrap.clientWidth || 1;
+  const h = wrap.clientHeight || 1;
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+function resizeGuideCanvases(){
+  resizeCanvasToWrap(guideCanvas, camWrap);
+  resizeCanvasToWrap(ovGuideCanvas, $('ovCamWrap'));
+  drawGuide(guideCtx, guideCanvas, currentBall ? videoToCanvasCircle(camVideo, guideCanvas, currentBall) : null);
+  drawGuide(ovGuideCtx, ovGuideCanvas, currentBallOverlay ? videoToCanvasCircle(eyesCam, ovGuideCanvas, currentBallOverlay) : null);
+}
+window.addEventListener('resize', resizeGuideCanvases);
+
+function getVideoDisplayRect(video, canvas){
+  const vw = video.videoWidth || 1;
+  const vh = video.videoHeight || 1;
+  const cw = canvas.clientWidth || 1;
+  const ch = canvas.clientHeight || 1;
+  const s = Math.min(cw / vw, ch / vh);
+  const dw = vw * s;
+  const dh = vh * s;
+  return { left:(cw-dw)/2, top:(ch-dh)/2, width:dw, height:dh, scale:s };
+}
+function videoToCanvasCircle(video, canvas, ball){
+  const rect = getVideoDisplayRect(video, canvas);
+  return {
+    x: rect.left + ball.x * rect.scale,
+    y: rect.top + ball.y * rect.scale,
+    r: ball.r * rect.scale
+  };
+}
+function getGuideGeometry(canvas){
+  const w = canvas.clientWidth || 1;
+  const h = canvas.clientHeight || 1;
+  const cx = w / 2;
+  const cy = h / 2;
+  const smallR = Math.min(w,h) * 0.09;
+  const bigR = Math.min(w,h) * 0.24;
+  return { w,h,cx,cy,smallR,bigR };
+}
+function drawGuide(ctx, canvas, ball){
+  ctx.clearRect(0,0,canvas.clientWidth,canvas.clientHeight);
+  const g = getGuideGeometry(canvas);
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,.30)';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(g.w,g.h); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(g.w,0); ctx.lineTo(0,g.h); ctx.stroke();
+
+  ctx.fillStyle = 'rgba(255,255,255,.10)';
+  ctx.beginPath(); ctx.arc(g.cx,g.cy,g.smallR,0,Math.PI*2); ctx.fill();
+
+  ctx.strokeStyle = 'rgba(255,255,255,.55)';
+  ctx.beginPath(); ctx.arc(g.cx,g.cy,g.smallR,0,Math.PI*2); ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(255,255,255,.65)';
+  ctx.beginPath(); ctx.arc(g.cx,g.cy,g.bigR,0,Math.PI*2); ctx.stroke();
+  ctx.restore();
+
+  if(ball){
+    ctx.save();
+    ctx.strokeStyle = '#22c55e';
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(ball.x, ball.y, Math.max(8, ball.r), 0, Math.PI*2); ctx.stroke();
+    ctx.fillStyle = '#22c55e';
+    ctx.beginPath(); ctx.arc(ball.x, ball.y, 4, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+}
+
+function getFrameMat(video, maxSide=720){
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  let scale = 1;
+  const maxDim = Math.max(vw, vh);
+  if(maxDim > maxSide) scale = maxSide / maxDim;
+  const w = Math.max(1, Math.round(vw * scale));
+  const h = Math.max(1, Math.round(vh * scale));
+  workCanvas.width = w;
+  workCanvas.height = h;
+  workCtx.drawImage(video, 0, 0, w, h);
+  return { scale, w, h };
+}
+function rgbToHsv(r, g, b){
+  r/=255; g/=255; b/=255;
+  const max=Math.max(r,g,b), min=Math.min(r,g,b), d=max-min;
+  let h=0;
+  if(d!==0){
+    switch(max){
+      case r: h = 60 * (((g-b)/d)%6); break;
+      case g: h = 60 * (((b-r)/d)+2); break;
+      case b: h = 60 * (((r-g)/d)+4); break;
+    }
+  }
+  if(h<0) h+=360;
+  const s = max===0 ? 0 : d/max;
+  return { h, s:s*255, v:max*255 };
+}
+function detectOrangeBall(video, settings){
+  if(!video.videoWidth || !video.videoHeight) return null;
+
+  const { scale, w, h } = getFrameMat(video, 720);
+  const img = workCtx.getImageData(0,0,w,h);
+  const data = img.data;
+  const mask = new Uint8Array(w*h);
+  const hueTol = Number(settings.hTol);
+  const satMinV = Number(settings.satMin);
+  const valMinV = Number(settings.valMin);
+
+  for(let i=0,p=0;i<data.length;i+=4,p++){
+    const hsv = rgbToHsv(data[i], data[i+1], data[i+2]);
+    const hh = hsv.h / 2;
+    mask[p] = (Math.abs(hh - ORANGE_HUE) <= hueTol && hsv.s >= satMinV && hsv.v >= valMinV) ? 1 : 0;
   }
 
-  function findBallInMask(mask, scale, searchRect, baseBall, opts = {}){
-    const fullW = mask.cols;
-    const fullH = mask.rows;
-    const rect = new cv.Rect(
-      clamp(Math.round(searchRect.x), 0, fullW - 1),
-      clamp(Math.round(searchRect.y), 0, fullH - 1),
-      clamp(Math.round(searchRect.w), 1, fullW),
-      clamp(Math.round(searchRect.h), 1, fullH)
-    );
-    rect.width = Math.min(rect.width, fullW - rect.x);
-    rect.height = Math.min(rect.height, fullH - rect.y);
+  const visited = new Uint8Array(w*h);
+  let best = null;
+  const idx = (x,y)=> y*w+x;
 
-    const roi = mask.roi(rect);
-    const contours = new cv.MatVector();
-    const hierarchy = new cv.Mat();
-    cv.findContours(roi, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+  for(let y=0;y<h;y++){
+    for(let x=0;x<w;x++){
+      const start = idx(x,y);
+      if(!mask[start] || visited[start]) continue;
 
-    const cx0 = fullW / 2;
-    const cy0 = fullH / 2;
-    const minSide = Math.min(fullW, fullH);
-    const minR = opts.minR || Math.max(8, minSide * 0.018);
-    const maxR = opts.maxR || Math.max(minR + 6, minSide * 0.24);
+      const qx=[x], qy=[y];
+      visited[start]=1;
+      let qi=0, area=0;
+      let minX=x,maxX=x,minY=y,maxY=y,sumX=0,sumY=0;
 
-    let best = null;
+      while(qi<qx.length){
+        const cx=qx[qi], cy=qy[qi]; qi++;
+        area++; sumX+=cx; sumY+=cy;
+        if(cx<minX) minX=cx; if(cx>maxX) maxX=cx;
+        if(cy<minY) minY=cy; if(cy>maxY) maxY=cy;
 
-    for(let i = 0; i < contours.size(); i++){
-      const cnt = contours.get(i);
-      const area = cv.contourArea(cnt);
-      if(area < Math.PI * minR * minR * 0.35){ cnt.delete(); continue; }
+        const nbs=[[cx-1,cy],[cx+1,cy],[cx,cy-1],[cx,cy+1],[cx-1,cy-1],[cx+1,cy-1],[cx-1,cy+1],[cx+1,cy+1]];
+        for(const [nx,ny] of nbs){
+          if(nx<0||ny<0||nx>=w||ny>=h) continue;
+          const ni=idx(nx,ny);
+          if(mask[ni] && !visited[ni]){
+            visited[ni]=1; qx.push(nx); qy.push(ny);
+          }
+        }
+      }
 
-      const peri = cv.arcLength(cnt, true);
-      if(peri <= 0){ cnt.delete(); continue; }
+      if(area < 80) continue;
 
-      const localCircle = contourToCircle(cnt);
-      const rx = localCircle.x + rect.x;
-      const ry = localCircle.y + rect.y;
-      const rr = localCircle.r;
+      const bw=maxX-minX+1, bh=maxY-minY+1;
+      const ratio=bw/Math.max(1,bh);
+      if(ratio<0.65 || ratio>1.35) continue;
 
-      if(rr < minR || rr > maxR){ cnt.delete(); continue; }
+      const r = Math.max(bw,bh)/2;
+      const fillRatio = area / Math.max(1, Math.PI*r*r);
+      if(fillRatio < 0.42) continue;
 
-      const circularity = (4 * Math.PI * area) / (peri * peri);
-      const fillRatio = area / (Math.PI * rr * rr);
-      if(circularity < (opts.circularityMin || 0.55)){ cnt.delete(); continue; }
-      if(fillRatio < (opts.fillMin || 0.50)){ cnt.delete(); continue; }
-
-      const fullCircle = { x: rx / scale, y: ry / scale, r: rr / scale };
-      const info = sampleBallInfo(fullCircle.x, fullCircle.y, fullCircle.r);
-      if(!info){ cnt.delete(); continue; }
-      if(info.sMean > (opts.sMeanMax || 95)){ cnt.delete(); continue; }
-      if(info.vMean < (opts.vMeanMin || 150)){ cnt.delete(); continue; }
-      if(info.whiteRatio < (opts.whiteRatioMin || 0.45)){ cnt.delete(); continue; }
-
-      const distCenter = Math.hypot(rx - cx0, ry - cy0);
-      const distBase = baseBall ? Math.hypot(fullCircle.x - baseBall.x, fullCircle.y - baseBall.y) : distCenter / scale;
-      const radiusRatio = baseBall ? (fullCircle.r / Math.max(1, baseBall.r)) : 1;
-      if(baseBall && distBase > (opts.maxDist || Math.max(baseBall.r * 6, 140))){ cnt.delete(); continue; }
-      if(baseBall && (radiusRatio < (opts.minRadiusRatio || 0.55) || radiusRatio > (opts.maxRadiusRatio || 1.65))){ cnt.delete(); continue; }
-
-      const score =
-        circularity * 220 +
-        fillRatio * 160 +
-        info.whiteRatio * 120 -
-        distBase * 0.9 -
-        Math.abs(radiusRatio - 1) * 140 -
-        distCenter * (opts.centerPenalty || 0);
+      const cx = sumX/area, cy = sumY/area;
+      const score = area * fillRatio;
 
       if(!best || score > best.score){
-        best = {
-          x: fullCircle.x,
-          y: fullCircle.y,
-          r: fullCircle.r,
-          score,
-          circularity,
-          fillRatio,
-          ...info
-        };
+        best = { x: cx/scale, y: cy/scale, r: r/scale, score };
       }
-
-      cnt.delete();
     }
+  }
+  return best;
+}
+function classifyBallPosition(video, canvas, ball){
+  if(!ball) return { code:null, label:null, conf:0 };
+  const vBall = videoToCanvasCircle(video, canvas, ball);
+  const g = getGuideGeometry(canvas);
+  const dx = vBall.x - g.cx;
+  const dy = vBall.y - g.cy;
+  const dist = Math.hypot(dx,dy);
 
-    roi.delete();
-    contours.delete();
-    hierarchy.delete();
-    return best;
+  if(dist <= g.smallR) return { code:'B_CENTER', label:'중앙', conf:99 };
+
+  const ax=Math.abs(dx), ay=Math.abs(dy);
+
+  if(dist > g.bigR){
+    if(ay >= ax){
+      return dy < 0
+        ? { code:'B_FAR', label:'멀리 있음', conf:clamp(70 + (ay/g.bigR)*20, 70, 99) }
+        : { code:'B_NEAR', label:'가까이 있음', conf:clamp(70 + (ay/g.bigR)*20, 70, 99) };
+    }else{
+      return dx < 0
+        ? { code:'B_LEFT', label:'왼쪽', conf:clamp(70 + (ax/g.bigR)*20, 70, 99) }
+        : { code:'B_RIGHT', label:'오른쪽', conf:clamp(70 + (ax/g.bigR)*20, 70, 99) };
+    }
   }
 
-  function findCenteredBall(){
-    const { src, scale, w, h } = getFrameMat(720);
-    const mask = buildWhiteMask(src, 80, 160);
-
-    const side = Math.min(w, h);
-    const roiSize = side * 0.56;
-    const rect = {
-      x: (w - roiSize) / 2,
-      y: (h - roiSize) / 2,
-      w: roiSize,
-      h: roiSize
-    };
-
-    const best = findBallInMask(mask, scale, rect, null, {
-      circularityMin: 0.58,
-      fillMin: 0.54,
-      sMeanMax: 90,
-      vMeanMin: 165,
-      whiteRatioMin: 0.55,
-      centerPenalty: 1.0,
-      minR: Math.max(10, side * 0.022),
-      maxR: Math.max(28, side * 0.18)
-    });
-
-    src.delete();
-    mask.delete();
-    return best;
+  if(ay >= ax){
+    return dy < 0
+      ? { code:'B_FAR', label:'멀리 있음', conf:clamp(55 + (ay/g.bigR)*25, 55, 92) }
+      : { code:'B_NEAR', label:'가까이 있음', conf:clamp(55 + (ay/g.bigR)*25, 55, 92) };
+  }else{
+    return dx < 0
+      ? { code:'B_LEFT', label:'왼쪽', conf:clamp(55 + (ax/g.bigR)*25, 55, 92) }
+      : { code:'B_RIGHT', label:'오른쪽', conf:clamp(55 + (ax/g.bigR)*25, 55, 92) };
   }
+}
 
-  function trackConfirmedBall(){
-    if(!confirmedBall) return null;
+async function openCameraStream(){
+  const candidates = [
+    {
+      audio:false,
+      video:{
+        facingMode:{ ideal:'environment' },
+        width:{ ideal:1280 },
+        height:{ ideal:720 }
+      }
+    },
+    {
+      audio:false,
+      video:{
+        facingMode:{ ideal:'user' },
+        width:{ ideal:1280 },
+        height:{ ideal:720 }
+      }
+    },
+    { audio:false, video:true }
+  ];
 
-    const { src, scale, w, h } = getFrameMat(720);
-    const satMax = clamp(Math.round(Math.max(70, confirmedBall.sMean + 30)), 50, 110);
-    const valMin = clamp(Math.round(Math.min(230, Math.max(135, confirmedBall.vMean - 50))), 120, 235);
-    const mask = buildWhiteMask(src, satMax, valMin);
-
-    const base = trackedBall || confirmedBall;
-    const px = base.x * scale;
-    const py = base.y * scale;
-    const pr = base.r * scale;
-
-    const searchRects = [];
-    const localHalf = Math.max(pr * 4.2, 70);
-    searchRects.push({ x: px - localHalf, y: py - localHalf, w: localHalf * 2, h: localHalf * 2 });
-
-    if(lostCount >= 1){
-      const wideHalf = Math.max(pr * 7.0, 150);
-      searchRects.push({ x: px - wideHalf, y: py - wideHalf, w: wideHalf * 2, h: wideHalf * 2 });
-    }
-    if(lostCount >= 3){
-      searchRects.push({ x: 0, y: 0, w, h });
-    }
-
-    let best = null;
-    for(const rect of searchRects){
-      best = findBallInMask(mask, scale, rect, confirmedBall, {
-        circularityMin: 0.45,
-        fillMin: 0.40,
-        sMeanMax: clamp(Math.round(confirmedBall.sMean + 45), 60, 115),
-        vMeanMin: clamp(Math.round(confirmedBall.vMean - 65), 110, 230),
-        whiteRatioMin: 0.35,
-        maxDist: Math.max(base.r * (lostCount >= 1 ? 8 : 5), 160),
-        minRadiusRatio: 0.50,
-        maxRadiusRatio: 1.75,
-        minR: Math.max(8, Math.min(w, h) * 0.016),
-        maxR: Math.max(28, Math.min(w, h) * 0.22)
-      });
-      if(best) break;
-    }
-
-    src.delete();
-    mask.delete();
-    return best;
-  }
-
-  async function startCam(){
-    if(camOn) return;
+  let lastErr = null;
+  for(const constraints of candidates){
     try{
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: 'environment' },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          frameRate: { ideal: 30, max: 30 }
-        },
-        audio: false
-      });
-
-      video.srcObject = stream;
-      await video.play();
-      camOn = true;
-      camBtn.textContent = '캠 끄기';
-      camBtn.classList.add('off');
-      if(cvReady) actionBtn.disabled = false;
-      modeText.textContent = '캠 준비 완료';
-      posText.textContent = '—';
-      debug.textContent = '공을 찾으려면 공 찾기를 누르세요.';
-      resizeOverlay();
-    } catch (e) {
-      debug.textContent = '카메라 실행 실패: ' + e + '\n(스마트폰에서는 HTTPS 또는 localhost 환경이 필요합니다.)';
+      const s = await navigator.mediaDevices.getUserMedia(constraints);
+      return s;
+    }catch(e){
+      lastErr = e;
     }
   }
+  throw lastErr || new Error('카메라를 열 수 없습니다.');
+}
 
-  function stopCam(){
-    if(video.srcObject){
-      try{ video.srcObject.getTracks().forEach(track => track.stop()); } catch(_e){}
-      video.srcObject = null;
+async function startCam(){
+  if(camOn) return;
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    log('❌ 이 브라우저에서는 카메라를 사용할 수 없습니다.');
+    alert('이 브라우저에서는 카메라를 사용할 수 없습니다.');
+    return;
+  }
+
+  try{
+    const stream = await openCameraStream();
+    camStream = stream;
+
+    camVideo.setAttribute('playsinline','true');
+    camVideo.muted = true;
+    camVideo.autoplay = true;
+    camVideo.srcObject = stream;
+
+    try{
+      await camVideo.play();
+    }catch(e){
+      log('⚠️ camVideo.play 재시도');
+      await new Promise(r=>setTimeout(r, 200));
+      await camVideo.play();
     }
-    stream = null;
-    camOn = false;
-    mode = 'idle';
-    currentCandidate = null;
-    confirmedBall = null;
-    trackedBall = null;
-    lostCount = 0;
-    lastAt = 0;
 
-    camBtn.textContent = '캠 켜기';
-    camBtn.classList.remove('off');
+    eyesCam.setAttribute('playsinline','true');
+    eyesCam.muted = true;
+    eyesCam.autoplay = true;
+    eyesCam.srcObject = stream;
 
-    actionBtn.textContent = '공 찾기';
-    actionBtn.classList.remove('finding', 'tracking');
-    actionBtn.disabled = !cvReady;
+    camOn = true;
+    updateCamUi();
+    updateDigitReadout(null);
+    overlayShowDigit(null);
+    resizeGuideCanvases();
+    startDetectLoop();
+    log('🎥 카메라 켜짐');
+  }catch(e){
+    log('❌ 카메라 실패: ' + (e && e.message ? e.message : e));
+    alert('카메라를 열지 못했습니다.\nHTTPS 환경인지와 카메라 권한 허용 여부를 확인해 주세요.');
+  }
+}
+function stopCam(){
+  if(!camOn) return;
+  try{ if(camRAF) cancelAnimationFrame(camRAF); }catch(e){}
+  camRAF = null;
 
-    modeText.textContent = '대기';
-    posText.textContent = '—';
-    debug.textContent = '';
-    clearOverlay();
+  try{ camVideo.pause(); }catch(e){}
+  try{ eyesCam.pause(); }catch(e){}
+
+  if(camStream){
+    try{ camStream.getTracks().forEach(t=>t.stop()); }catch(e){}
   }
 
-  function startFinding(){
-    if(!camOn || !cvReady) return;
-    mode = 'finding';
-    currentCandidate = null;
-    confirmedBall = null;
-    trackedBall = null;
-    lostCount = 0;
-    actionBtn.textContent = '공 확인';
-    actionBtn.classList.add('finding');
-    actionBtn.classList.remove('tracking');
-    modeText.textContent = '중앙의 공 찾는 중';
-    posText.textContent = '—';
-    debug.textContent = '흰색 공 1개를 화면 중앙에 두세요. 공 둘레에 초록 원이 맞으면 공 확인을 누르세요.';
-    drawFindingOverlay();
+  camVideo.srcObject = null;
+  eyesCam.srcObject = null;
+  camStream = null;
+  camOn = false;
+  currentBall = null;
+  currentBallOverlay = null;
+  drawGuide(guideCtx, guideCanvas, null);
+  drawGuide(ovGuideCtx, ovGuideCanvas, null);
+  updateDigitReadout(null);
+  overlayShowDigit(null);
+  updateCamUi();
+  log('🛑 카메라 꺼짐');
+}
+camToggle.onclick = ()=> camOn ? stopCam() : startCam();
+
+ballFindBtn.onclick = ()=>{ ballFinding = true; log('🟠 패널 공찾기 시작'); };
+ovBallFindBtn.onclick = ()=>{ ballFindingOverlay = true; log('🟠 전체화면 공찾기 시작'); };
+
+function handleBallPipeline(res, source){
+  const prefix = source === 'overlay' ? '[전체화면]' : '[카메라]';
+  if(!res || !res.code) return;
+
+  if(source === 'panel') updateDigitReadout(res.label);
+  else overlayShowDigit(res.label);
+
+  const now = performance.now();
+  const key = res.code;
+  const shouldLog = (key !== lastStateKey) || (now - lastLogTs > 1500);
+  if(shouldLog){
+    lastStateKey = key;
+    lastLogTs = now;
+    log(`${prefix} ① 공 위치 인식: ${res.label} (${res.conf.toFixed(1)}%)`);
+    log(`${prefix} ② 이벤트 확인중: ${res.label}`);
   }
 
-  function confirmBall(){
-    if(!currentCandidate){
-      debug.textContent = '아직 공 후보가 없습니다. 흰색 공을 화면 중앙에 조금 더 크게 보여 주세요.';
+  if(queueBusy) return;
+  triggerEvent(res.code, res.conf, source);
+}
+
+function startDetectLoop(){
+  panelLastDetectTs = 0;
+  if(camRAF) cancelAnimationFrame(camRAF);
+
+  const step = ()=>{
+    if(!camOn || !camVideo.videoWidth || !camVideo.videoHeight){
+      camRAF = requestAnimationFrame(step);
       return;
     }
-    confirmedBall = { ...currentCandidate };
-    trackedBall = { x: currentCandidate.x, y: currentCandidate.y, r: currentCandidate.r };
-    lostCount = 0;
-    mode = 'tracking';
-    actionBtn.textContent = '다시 찾기';
-    actionBtn.classList.remove('finding');
-    actionBtn.classList.add('tracking');
-    modeText.textContent = '공 추적 중';
-    posText.textContent = `x ${trackedBall.x.toFixed(0)}, y ${trackedBall.y.toFixed(0)}`;
-    debug.textContent = `공 확인 완료 · x ${trackedBall.x.toFixed(0)}, y ${trackedBall.y.toFixed(0)}, r ${trackedBall.r.toFixed(0)}`;
-    drawTrackingOverlay(false);
-  }
 
-  function processFinding(){
-    const t0 = performance.now();
-    currentCandidate = findCenteredBall();
-    drawFindingOverlay();
-    const t1 = performance.now();
-    if(currentCandidate){
-      posText.textContent = `x ${currentCandidate.x.toFixed(0)}, y ${currentCandidate.y.toFixed(0)}`;
-      debug.textContent = `중앙 후보 발견 · x ${currentCandidate.x.toFixed(0)}, y ${currentCandidate.y.toFixed(0)}, r ${currentCandidate.r.toFixed(0)} · ${(t1 - t0).toFixed(0)}ms`;
-    } else {
-      posText.textContent = '—';
-      debug.textContent = `중앙에서 공 후보를 찾는 중 · ${(t1 - t0).toFixed(0)}ms`;
-    }
-  }
+    drawGuide(guideCtx, guideCanvas, currentBall ? videoToCanvasCircle(camVideo, guideCanvas, currentBall) : null);
 
-  function processTracking(){
-    const t0 = performance.now();
-    const found = trackConfirmedBall();
-    const t1 = performance.now();
+    if(!isFullscreenRun && !queueBusy){
+      const now = performance.now();
+      if(now - panelLastDetectTs >= PROCESS_MS){
+        panelLastDetectTs = now;
 
-    if(found){
-      trackedBall = found;
-      lostCount = 0;
-      posText.textContent = `x ${trackedBall.x.toFixed(0)}, y ${trackedBall.y.toFixed(0)}`;
-      drawTrackingOverlay(false);
-      debug.textContent = `추적 성공 · x ${trackedBall.x.toFixed(0)}, y ${trackedBall.y.toFixed(0)}, r ${trackedBall.r.toFixed(0)} · ${(t1 - t0).toFixed(0)}ms`;
-    } else {
-      lostCount += 1;
-      drawTrackingOverlay(true);
-      if(trackedBall){
-        posText.textContent = `x ${trackedBall.x.toFixed(0)}, y ${trackedBall.y.toFixed(0)}`;
-      } else {
-        posText.textContent = '—';
+        const ball = detectOrangeBall(camVideo, {
+          hTol: hTol.value,
+          satMin: satMin.value,
+          valMin: valMin.value
+        });
+        currentBall = ball;
+        drawGuide(guideCtx, guideCanvas, ball ? videoToCanvasCircle(camVideo, guideCanvas, ball) : null);
+
+        if(ballFinding && ball){
+          ballFinding = false;
+          log('🟠 패널 공 발견');
+        }
+        if(ball){
+          const pos = classifyBallPosition(camVideo, guideCanvas, ball);
+          handleBallPipeline(pos, 'panel');
+        }else{
+          updateDigitReadout(null);
+        }
       }
-      debug.textContent = `추적 실패 · 마지막 위치 유지 · ${(t1 - t0).toFixed(0)}ms`;
     }
-  }
+    camRAF = requestAnimationFrame(step);
+  };
+  camRAF = requestAnimationFrame(step);
+}
 
-  function loop(ts){
-    requestAnimationFrame(loop);
-    if(!camOn || !cvReady || busy) return;
-    if(ts - lastAt < PROCESS_MS) return;
-    lastAt = ts;
-    busy = true;
-    try{
-      if(mode === 'finding') processFinding();
-      else if(mode === 'tracking') processTracking();
-      else clearOverlay();
-    } catch (e) {
-      console.error(e);
-      debug.textContent = '처리 오류: ' + e;
-    } finally {
-      busy = false;
+/* ===== 전체화면 ===== */
+let overlayStartedCam = false;
+async function startFullRun(){
+  if(isRunning) return;
+  eventPrograms = buildEventPrograms();
+  cancelToken++;
+  queue = [];
+  isFullscreenRun = true;
+  setRunning(true);
+
+  $('playOverlay').classList.add('show');
+  try{
+    if($('playOverlay').requestFullscreen) await $('playOverlay').requestFullscreen();
+  }catch(e){}
+
+  overlayStartedCam = !camOn;
+  if(!camOn) await startCam();
+
+  try{
+    eyesCam.srcObject = camStream;
+    await eyesCam.play();
+  }catch(e){}
+
+  startOverlayLoop();
+}
+async function stopRun(){
+  cancelToken++;
+  queue = [];
+  setRunning(false);
+  stopOverlayLoop();
+  $('playOverlay').classList.remove('show');
+  isFullscreenRun = false;
+
+  try{
+    if(document.fullscreenElement) await document.exitFullscreen();
+  }catch(e){}
+
+  try{
+    if(writeChar) writeChar.writeValue(enc('S\n'));
+  }catch(e){}
+
+  if(overlayStartedCam){
+    stopCam();
+    overlayStartedCam = false;
+  }
+}
+$('testBtn').onclick = ()=>{
+  if(isRunning) return;
+  eventPrograms = buildEventPrograms();
+  cancelToken++;
+  queue = [];
+  isFullscreenRun = false;
+  setRunning(true);
+};
+$('runToggle').onclick = ()=>{ if(!isRunning) startFullRun(); else stopRun(); };
+
+function startOverlayLoop(){
+  overlayLastDetectTs = 0;
+  if(overlayRAF) cancelAnimationFrame(overlayRAF);
+  overlayShowDigit(null);
+  resizeGuideCanvases();
+
+  const loop = ()=>{
+    if(!isRunning || !isFullscreenRun || !eyesCam.videoWidth || !eyesCam.videoHeight){
+      overlayRAF = requestAnimationFrame(loop);
+      return;
     }
-  }
 
-  function waitForCv(){
-    if(window.cv && cv.Mat){
-      cv['onRuntimeInitialized'] = () => {
-        cvReady = true;
-        cvStatus.textContent = '준비됨';
-        if(camOn) actionBtn.disabled = false;
-      };
-      if(cv.getBuildInformation){
-        cvReady = true;
-        cvStatus.textContent = '준비됨';
-        if(camOn) actionBtn.disabled = false;
+    drawGuide(ovGuideCtx, ovGuideCanvas, currentBallOverlay ? videoToCanvasCircle(eyesCam, ovGuideCanvas, currentBallOverlay) : null);
+
+    if(!queueBusy){
+      const now = performance.now();
+      if(now - overlayLastDetectTs >= PROCESS_MS){
+        overlayLastDetectTs = now;
+
+        const ball = detectOrangeBall(eyesCam, {
+          hTol: ovHTol.value,
+          satMin: ovSatMin.value,
+          valMin: ovValMin.value
+        });
+        currentBallOverlay = ball;
+        drawGuide(ovGuideCtx, ovGuideCanvas, ball ? videoToCanvasCircle(eyesCam, ovGuideCanvas, ball) : null);
+
+        if(ballFindingOverlay && ball){
+          ballFindingOverlay = false;
+          log('🟠 전체화면 공 발견');
+        }
+        if(ball){
+          const pos = classifyBallPosition(eyesCam, ovGuideCanvas, ball);
+          handleBallPipeline(pos, 'overlay');
+        }else{
+          overlayShowDigit(null);
+        }
       }
-    } else {
-      setTimeout(waitForCv, 100);
     }
+    overlayRAF = requestAnimationFrame(loop);
+  };
+  overlayRAF = requestAnimationFrame(loop);
+}
+function stopOverlayLoop(){
+  if(overlayRAF) cancelAnimationFrame(overlayRAF);
+  overlayRAF = null;
+  overlayShowDigit(null);
+}
+document.addEventListener('fullscreenchange', ()=>{
+  applyHeaderHeight();
+  resizeGuideCanvases();
+  if(isFullscreenRun && !document.fullscreenElement) stopRun();
+});
+document.addEventListener('keydown', e=>{
+  if(isFullscreenRun && e.key === 'Escape') stopRun();
+});
+$('fsBtn').onclick = async ()=>{
+  if(document.fullscreenElement) await document.exitFullscreen();
+  else await document.documentElement.requestFullscreen();
+};
+
+/* ===== 리사이저 ===== */
+(function(){
+  const divider = $('rightDivider');
+  const root = document.documentElement;
+  let dragging=false, startY=0, startH=0, rightH=0;
+  function pxToNum(px){ return Number(String(px).replace('px',''))||0; }
+  function onDown(e){
+    e.preventDefault();
+    dragging=true;
+    startY=('touches' in e ? e.touches[0].clientY : e.clientY);
+    startH=pxToNum(getComputedStyle(root).getPropertyValue('--logH'));
+    rightH=$('right').clientHeight;
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('touchmove', onMove, {passive:false});
+    window.addEventListener('mouseup', onUp, {once:true});
+    window.addEventListener('touchend', onUp, {once:true});
   }
-
-  camBtn.addEventListener('click', () => camOn ? stopCam() : startCam());
-  actionBtn.addEventListener('click', () => {
-    if(mode === 'finding') confirmBall();
-    else startFinding();
-  });
-  window.addEventListener('resize', resizeOverlay);
-
-  resizeOverlay();
-  waitForCv();
-  requestAnimationFrame(loop);
+  function onMove(e){
+    if(!dragging) return;
+    const y=('touches' in e ? e.touches[0].clientY : e.clientY);
+    if('touches' in e) e.preventDefault();
+    let nh = startH + (startY - y);
+    nh = Math.min(Math.max(90, nh), Math.max(130, Math.floor(rightH*0.8)));
+    root.style.setProperty('--logH', nh+'px');
+  }
+  function onUp(){
+    dragging=false;
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('touchmove', onMove);
+  }
+  divider.addEventListener('mousedown', onDown);
+  divider.addEventListener('touchstart', onDown, {passive:false});
 })();
+(function(){
+  const res = $('hResizer'), main = $('main'), right = $('right');
+  let dragging=false, startX=0, startW=0, maxW=0;
+  function clamp2(v,a,b){ return Math.max(a, Math.min(b, v)); }
+  function computeMax(){
+    const rect = main.getBoundingClientRect();
+    const barW = res.getBoundingClientRect().width || 8;
+    maxW = Math.max(0, rect.width - barW);
+    return maxW;
+  }
+  function onDown(x){
+    dragging=true; startX=x; startW=right.getBoundingClientRect().width; computeMax();
+  }
+  function applyWidth(newW){
+    newW = clamp2(newW, 0, maxW);
+    document.documentElement.style.setProperty('--rightW', newW + 'px');
+    Blockly.svgResize(ws);
+    resizeGuideCanvases();
+  }
+  function onMove(x){
+    if(!dragging) return;
+    applyWidth(startW - (x - startX));
+  }
+  function onUp(){ dragging=false; }
+
+  res.addEventListener('mousedown', e=>{ e.preventDefault(); onDown(e.clientX); });
+  window.addEventListener('mousemove', e=> onMove(e.clientX));
+  window.addEventListener('mouseup', onUp);
+
+  res.addEventListener('touchstart', e=>{
+    if(!e.touches||!e.touches[0]) return;
+    e.preventDefault();
+    onDown(e.touches[0].clientX);
+  }, {passive:false});
+  window.addEventListener('touchmove', e=>{
+    if(!e.touches||!e.touches[0]) return;
+    onMove(e.touches[0].clientX);
+  }, {passive:false});
+  window.addEventListener('touchend', onUp);
+})();
+
+applyHeaderHeight();
+updateCamUi();
+resizeGuideCanvases();
 </script>
 </body>
 </html>
